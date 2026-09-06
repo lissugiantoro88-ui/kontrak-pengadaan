@@ -225,7 +225,6 @@
     padding:1px 7px;border-radius:8px;margin-left:8px;vertical-align:middle;
     text-transform:uppercase;letter-spacing:.02em;
   }
-  .jobsrc{color:var(--ink-soft);font-size:12px;margin-top:2px;}
 
   /* progress bar — signature element: weighted stage bar (3 zone proportions) */
   .progWrap{display:flex;align-items:center;gap:9px;min-width:170px;}
@@ -560,6 +559,7 @@
       </div>
       <div style="display:flex;gap:8px;">
         <button class="btn btn-ghost" id="btnExportPdf" onclick="window.exportPdfReport()">Export PDF</button>
+        <button class="btn btn-ghost" id="btnImportFormat" onclick="window.openImportFormatModal()" title="Lihat contoh format Excel">Format Import ⓘ</button>
         <button class="btn btn-ghost" id="btnImport" onclick="document.getElementById('excelFileInput').click()">Import dari Excel</button>
         <button class="btn btn-primary" id="btnAdd" onclick="window.openAddModal()">+ Tambah Pekerjaan</button>
       </div>
@@ -630,6 +630,41 @@
       </div>
     </div>
   </main>
+</div>
+
+<!-- ===================== MODAL: FORMAT IMPORT EXCEL ===================== -->
+<div class="modalOverlay" id="importFormatModal">
+  <div class="modalBox" style="width:640px;">
+    <h2>Format Excel untuk Import</h2>
+    <div class="hint" style="margin-bottom:14px;">
+      Data dibaca mulai <b>baris ke-6</b>. Baris 1–5 bebas dipakai untuk judul/catatan sendiri — tidak dibaca sistem.
+      Posisi kolom <b>B sampai U harus persis</b> seperti ini (jangan digeser):
+    </div>
+    <div class="tableWrap" style="margin-bottom:14px;">
+      <table style="font-size:11.5px;">
+        <thead>
+          <tr>
+            <th>Kolom</th><th>Isi</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="mono">B</td><td>Nama Pekerjaan (wajib diisi — baris kosong otomatis dilewati)</td></tr>
+          <tr><td class="mono">C</td><td>Nama Planner</td></tr>
+          <tr><td class="mono">D</td><td>Kategori (idealnya: Maintenance / OYSP / Take Over / Tools / Training)</td></tr>
+          <tr><td class="mono">E</td><td>Jenis Kontrak (idealnya: All in / Material / Jasa / Unit Rate / Empowerment / PPHK / Tools)</td></tr>
+          <tr><td class="mono">F</td><td>Effective Date — tanggal Excel asli, atau teks dd.mm.yyyy / dd-mm-yyyy. Kalau isi kalimat bebas, otomatis dipindah jadi catatan (bukan dipaksa jadi tanggal)</td></tr>
+          <tr><td class="mono">G</td><td>Catatan Progress (bebas teks)</td></tr>
+          <tr><td class="mono">H–S</td><td>12 kolom sub-tahap berurutan — isi APA SAJA (selain kosong) kalau sudah selesai, KOSONGKAN kalau belum: Searching, Quotation, Lingkup (KAK), OE, TKDN, Izin Metode, Berkas Procurement, Pre-Bid Meeting, Evaluasi & Negosiasi, LHP, Penetapan Pemenang, Kontrak/PO</td></tr>
+          <tr><td class="mono">T</td><td>Boleh dikosongkan — app hitung ulang otomatis dari kolom H–S</td></tr>
+          <tr><td class="mono">U</td><td>Catatan Akhir / Keterangan (bebas teks)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="modalFooter">
+      <button class="btn btn-ghost" onclick="window.closeImportFormatModal()">Tutup</button>
+      <button class="btn btn-primary" onclick="window.downloadImportTemplate()">Download Template Contoh</button>
+    </div>
+  </div>
 </div>
 
 <!-- ===================== MODAL: GANTI PASSWORD (self-service) ===================== -->
@@ -761,11 +796,6 @@
     <div class="field">
       <label>Effective Date / Tanggal Habis Kontrak <span class="hint" style="display:inline;">(khusus kontrak berjalan)</span></label>
       <input type="date" id="fEffective">
-    </div>
-
-    <div class="field">
-      <label>Sumber Kebutuhan</label>
-      <input type="text" id="fSumber" placeholder="mis. Program kerja tahunan, Issue Register #123, permintaan operasi, dll">
     </div>
 
     <!-- Checklist sub-tahap berbobot -->
@@ -1153,6 +1183,7 @@ onAuthStateChanged(auth, async (user) => {
     const canWrite = ["planner", "admin", "senior_planner"].includes(currentRole);
     document.getElementById("btnAdd").style.display = canWrite ? "inline-flex" : "none";
     document.getElementById("btnImport").style.display = canWrite ? "inline-flex" : "none";
+    document.getElementById("btnImportFormat").style.display = canWrite ? "inline-flex" : "none";
     document.getElementById("btnExportPdf").style.display = ["manager", "admin", "senior_planner"].includes(currentRole) ? "inline-flex" : "none";
     document.getElementById("tabUsers").style.display = ["admin", "senior_planner"].includes(currentRole) ? "inline-block" : "none";
     document.getElementById("viewTabsBar").style.display = ["admin", "senior_planner"].includes(currentRole) ? "flex" : "none";
@@ -2129,7 +2160,7 @@ function getFilteredItems(){
     items = items.filter(i => {
       const haystack = [
         i.namaPekerjaan, i.pic, i.kategori, i.contractType,
-        i.sumberKebutuhan, i.progressNote, i.keterangan
+        i.progressNote, i.keterangan
       ].filter(Boolean).join(" ").toLowerCase();
       return haystack.includes(fSearch);
     });
@@ -2206,7 +2237,6 @@ window.renderTable = function(){
       <tr class="${overdue ? 'rowOverdue' : ''}">
         <td>
           <div class="jobname">${escapeHtml(item.namaPekerjaan)}${relativeUpdateBadge(item)}${isStuck(item) ? `<span class="stuckBadge">${getAgeDays(item)} Hari Tanpa Progress</span>` : ""}</div>
-          ${item.sumberKebutuhan ? `<div class="jobsrc">Sumber: ${escapeHtml(item.sumberKebutuhan)}</div>` : ""}
           ${item.progressNote ? `<div class="progNote">${escapeHtml(item.progressNote)}</div>` : ""}
         </td>
         <td><span class="pill ${pillClass}">${escapeHtml(item.kategori || "—")}</span></td>
@@ -2263,7 +2293,6 @@ window.openAddModal = function(){
   document.getElementById("fPic").value = ["planner", "senior_planner"].includes(currentRole) ? currentName : "";
   document.getElementById("fTarget").value = "";
   document.getElementById("fEffective").value = "";
-  document.getElementById("fSumber").value = "";
   document.getElementById("fProgressNote").value = "";
   document.getElementById("fKet").value = "";
   document.getElementById("modalErr").textContent = "";
@@ -2302,7 +2331,6 @@ window.openEditModal = function(id){
   document.getElementById("fPic").value = item.pic || "";
   document.getElementById("fTarget").value = item.targetSelesai || "";
   document.getElementById("fEffective").value = item.effectiveDate || "";
-  document.getElementById("fSumber").value = item.sumberKebutuhan || "";
   document.getElementById("fProgressNote").value = item.progressNote || "";
   document.getElementById("fKet").value = item.keterangan || "";
   document.getElementById("modalErr").textContent = "";
@@ -2324,7 +2352,7 @@ function setFieldPermissions(isEdit){
   const managerOnly = currentRole === "manager" && isEdit;
   const readOnlyAll = isViewer || managerOnly;
   const fields = ["fNama","fKategori","fKategoriLainnya","fContractType","fContractTypeLainnya",
-                  "fPic","fEffective","fSumber","fProgressNote","fKet"];
+                  "fPic","fEffective","fProgressNote","fKet"];
   fields.forEach(id => { document.getElementById(id).disabled = readOnlyAll; });
   document.querySelectorAll("#stageChecklist input[type=checkbox]").forEach(cb => { cb.disabled = readOnlyAll; });
   // Target tanggal: planner/admin/senior_planner/manager boleh isi — viewer TIDAK sama sekali.
@@ -2378,7 +2406,6 @@ window.saveItem = async function(){
       pic: document.getElementById("fPic").value.trim(),
       targetSelesai: targetVal,
       effectiveDate: document.getElementById("fEffective").value,
-      sumberKebutuhan: document.getElementById("fSumber").value.trim(),
       progressNote: document.getElementById("fProgressNote").value.trim(),
       keterangan: document.getElementById("fKet").value.trim(),
       stages: newStages,
@@ -2468,6 +2495,36 @@ function emptyStages(){
   return obj;
 }
 
+window.openImportFormatModal = function(){
+  document.getElementById("importFormatModal").classList.add("show");
+};
+window.closeImportFormatModal = function(){
+  document.getElementById("importFormatModal").classList.remove("show");
+};
+
+window.downloadImportTemplate = function(){
+  // Baris 1-2: judul & catatan (bebas, tidak dibaca importer).
+  // Baris 5: header kolom (cosmetic, importer baca POSISI bukan teksnya).
+  // Baris 6: contoh data.
+  const aoa = [
+    ["TEMPLATE IMPORT — MONITORING PERENCANAAN PENGADAAN KONTRAK"],
+    ["Data mulai dibaca dari baris 6. Baris 1-5 bebas, TIDAK dibaca sistem. Jangan geser posisi kolom B-U."],
+    [],
+    [],
+    ["No","Task Description","Planner","Category","Contract Type","Effective Date","Progress",
+     "Searching (7)","Quotation (7)","Lingkup KAK (10)","OE (15)","TKDN (12)","Izin Metode (11)","Berkas Procurement (5)",
+     "Pre-Bid (8)","Evaluasi & Negosiasi (10)","LHP (5)","Penetapan Pemenang (5)","Kontrak/PO (5)","Total (otomatis)","Catatan Akhir"],
+    [1,"Contoh: Pengadaan Jasa Inspeksi Bejana Tekan Unit 3","Nama Planner","Maintenance","Jasa","2027-06-30",
+     "Pembuatan Lingkup dan OE",7,7,10,"","","","","","","","","","",""]
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"] = [{wch:5},{wch:34},{wch:16},{wch:13},{wch:13},{wch:13},{wch:20},
+                 {wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:14},{wch:20}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Template");
+  XLSX.writeFile(wb, "Template_Import_Pengadaan.xlsx");
+};
+
 window.handleExcelImport = function(event){
   const file = event.target.files[0];
   if(!file) return;
@@ -2524,7 +2581,6 @@ window.handleExcelImport = function(event){
           pic,
           targetSelesai: "",
           effectiveDate: effParsed.iso,
-          sumberKebutuhan: "Migrasi dari Excel Monitoring Planner",
           progressNote,
           keterangan,
           stages,
