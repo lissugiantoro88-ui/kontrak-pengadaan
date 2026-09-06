@@ -889,7 +889,7 @@ function renderStageChecklist(savedStages){
         <div class="stageRow">
           <input type="checkbox" id="stage_${s.key}" data-weight="${s.weight}" ${checked} onchange="window.updateProgressPreview()">
           <label for="stage_${s.key}">${s.label}</label>
-          <span class="weight">${s.weight} pts</span>
+          <span class="weight">${s.weight} poin</span>
         </div>`;
     });
     html += `</div>`;
@@ -1684,7 +1684,7 @@ function renderPlannerBars(items){
 // - Sisa Beban: total poin progress yang MASIH harus diselesaikan di
 //   seluruh tugas aktif mereka (tugas 90% jauh lebih ringan dari 10%,
 //   walau sama-sama dihitung "1 tugas aktif")
-// - Rata-rata & Usia Terlama Macet: berbasis progressUpdatedAt (kapan
+// - Rata-rata & Terlama Tanpa Progress: berbasis progressUpdatedAt (kapan
 //   checklist sub-tahap terakhir benar-benar berubah), bukan sekadar
 //   field lain diedit
 // ---------------------------------------------------------------------
@@ -1713,7 +1713,7 @@ function renderWLA(items){
       <tr style="cursor:pointer;border-bottom:1px solid #F0F0EE;" onclick='window.goFilterPlanner(${JSON.stringify(p)})'>
         <td style="padding:6px 8px;">${escapeHtml(p)}</td>
         <td style="padding:6px 8px;text-align:right;" class="mono">${d.activeCount}</td>
-        <td style="padding:6px 8px;text-align:right;" class="mono">${d.remainingSum} pts</td>
+        <td style="padding:6px 8px;text-align:right;" class="mono">${d.remainingSum} poin</td>
         <td style="padding:6px 8px;text-align:right;" class="mono">${avgAge} hari</td>
         <td style="padding:6px 8px;text-align:right;" class="mono">${oldestAge} hari</td>
         <td style="padding:6px 8px;text-align:right;${d.stuckCount>0?'color:var(--red);font-weight:600;':''}" class="mono">${d.stuckCount}</td>
@@ -1728,16 +1728,16 @@ function renderWLA(items){
           <th style="padding:6px 8px;">Planner</th>
           <th style="padding:6px 8px;text-align:right;">Tugas Aktif</th>
           <th style="padding:6px 8px;text-align:right;">Sisa Beban</th>
-          <th style="padding:6px 8px;text-align:right;">Rata&sup2; Usia</th>
-          <th style="padding:6px 8px;text-align:right;">Usia Terlama</th>
-          <th style="padding:6px 8px;text-align:right;">Macet (&ge;${STUCK_THRESHOLD_DAYS}h)</th>
+          <th style="padding:6px 8px;text-align:right;">Rata-rata Tanpa Progress</th>
+          <th style="padding:6px 8px;text-align:right;">Terlama Tanpa Progress</th>
+          <th style="padding:6px 8px;text-align:right;">Jumlah Tanpa Progress (&ge;${STUCK_THRESHOLD_DAYS} hari)</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
     </table>
     <div class="hint" style="margin-top:8px;">
       "Sisa Beban" = total poin progress (dari 100 per tugas) yang belum diselesaikan di semua tugas aktif planner tsb.
-      "Macet" = tugas aktif yang progress-nya tidak berubah sama sekali selama ${STUCK_THRESHOLD_DAYS} hari atau lebih. Klik baris untuk lihat semua tugas planner tsb.
+      "Tanpa Progress" = tugas aktif yang progress-nya tidak berubah sama sekali selama ${STUCK_THRESHOLD_DAYS} hari atau lebih. Klik baris untuk lihat semua tugas planner tsb.
     </div>
   `;
 }
@@ -1963,11 +1963,11 @@ function renderMyPerformance(items){
       `).join("")}</div>`;
 
   const stuckListHtml = stuck.length === 0
-    ? `<div class="hint">Tidak ada tugas yang mengendap tanpa progress. Baik.</div>`
+    ? `<div class="hint">Semua tugas ada progress dalam ${STUCK_THRESHOLD_DAYS} hari terakhir. Baik.</div>`
     : `<div class="myOverdueList">${stuck.map(i => `
         <div class="moItem" style="cursor:pointer;" onclick='window.switchView("list");window.openEditModal(${JSON.stringify(i.id)})'>
           <span>${escapeHtml(i.namaPekerjaan)}</span>
-          <span class="moDate">Macet ${getAgeDays(i)} hari</span>
+          <span class="moDate">${getAgeDays(i)} hari tanpa progress</span>
         </div>
       `).join("")}</div>`;
 
@@ -1978,7 +1978,7 @@ function renderMyPerformance(items){
         <div class="planCardGrid">
           <div><div class="num mono" style="font-size:22px;">${total}</div><div class="lbl">Total Tugas Saya</div></div>
           <div><div class="num mono" style="font-size:22px;">${done}</div><div class="lbl">Selesai</div></div>
-          <div><div class="num mono" style="font-size:22px;">${remainingSum}</div><div class="lbl">Sisa Beban (pts)</div></div>
+          <div><div class="num mono" style="font-size:22px;">${remainingSum}</div><div class="lbl">Sisa Beban (poin)</div></div>
           <div><div class="num mono" style="font-size:22px;color:${overdue.length>0?'var(--red)':'inherit'}">${overdue.length}</div><div class="lbl">Terlambat</div></div>
         </div>
         <div style="margin-top:14px;">
@@ -1986,7 +1986,7 @@ function renderMyPerformance(items){
           ${overdueListHtml}
         </div>
         <div style="margin-top:14px;">
-          <div class="stageGroupTitle" style="margin-bottom:8px;">Pekerjaan Saya yang Mengendap (&ge;${STUCK_THRESHOLD_DAYS} hari tanpa progress)</div>
+          <div class="stageGroupTitle" style="margin-bottom:8px;">Pekerjaan Saya Tanpa Progress (&ge;${STUCK_THRESHOLD_DAYS} hari)</div>
           ${stuckListHtml}
         </div>
       </div>
@@ -2125,7 +2125,7 @@ window.renderTable = function(){
     return `
       <tr class="${overdue ? 'rowOverdue' : ''}">
         <td>
-          <div class="jobname">${escapeHtml(item.namaPekerjaan)}${relativeUpdateBadge(item)}${isStuck(item) ? `<span class="stuckBadge">Macet ${getAgeDays(item)}h</span>` : ""}</div>
+          <div class="jobname">${escapeHtml(item.namaPekerjaan)}${relativeUpdateBadge(item)}${isStuck(item) ? `<span class="stuckBadge">${getAgeDays(item)} Hari Tanpa Progress</span>` : ""}</div>
           ${item.progressNote ? `<div class="progNote">${escapeHtml(item.progressNote)}</div>` : ""}
         </td>
         <td><span class="pill ${pillClass}">${escapeHtml(item.kategori || "—")}</span></td>
