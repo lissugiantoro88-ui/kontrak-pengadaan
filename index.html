@@ -1456,7 +1456,7 @@ async function loadUsersPanel(){
         <td>${escapeHtml(u.nama || "—")}</td>
         <td>${escapeHtml(u.email || "—")}</td>
         <td>
-          <select onchange="window.changeUserRole(${JSON.stringify(u.id)}, this.value)" ${u.id === currentUser.uid ? "disabled" : ""}>
+          <select onchange='window.changeUserRole(${JSON.stringify(u.id)}, this.value)' ${u.id === currentUser.uid ? "disabled" : ""}>
             <option value="planner" ${u.role==="planner"?"selected":""}>Planner</option>
             <option value="senior_planner" ${u.role==="senior_planner"?"selected":""}>Senior Planner</option>
             <option value="manager" ${u.role==="manager"?"selected":""}>Manager</option>
