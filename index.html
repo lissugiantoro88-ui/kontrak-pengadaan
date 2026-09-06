@@ -1526,11 +1526,15 @@ window.deleteUserProfile = async function(uid){
 window.changeUserRole = async function(uid, newRole){
   try{
     await updateDoc(doc(db, "users", uid), { role: newRole, updatedAt: serverTimestamp() });
-    loadUsersPanel(); // refresh supaya kelihatan tersimpan, bukan diam saja
+    // setTimeout(...,0): kasih jeda 1 tick, supaya proses internal Chrome
+    // menutup popup dropdown selesai dulu SEBELUM elemen-nya diganti oleh
+    // render ulang tabel — kalau langsung, Chrome bisa error internal
+    // (PagePopupController) karena elemen yang lagi dipakainya diganti.
+    setTimeout(loadUsersPanel, 0);
   }catch(e){
     alert("Gagal mengubah role. Periksa hak akses.\n\nDetail: " + (e.code || e.message || "tidak diketahui"));
     console.error(e);
-    loadUsersPanel(); // kembalikan dropdown ke nilai asli kalau gagal
+    setTimeout(loadUsersPanel, 0);
   }
 };
 
