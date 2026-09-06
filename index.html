@@ -446,6 +446,45 @@
   .paginationBar select{
     border:1px solid var(--line);border-radius:6px;padding:5px 7px;font-size:12.5px;font-family:inherit;
   }
+
+  /* ===== FLOATING APPS MENU ===== */
+  #appsFab{
+    position:fixed;bottom:24px;right:24px;z-index:100;
+    width:52px;height:52px;border-radius:50%;
+    background:var(--ink);color:#fff;border:none;cursor:pointer;
+    display:none;align-items:center;justify-content:center;
+    box-shadow:0 3px 12px rgba(28,37,48,0.25);
+    transition:transform .15s, box-shadow .15s;
+  }
+  #appsFab:hover{transform:translateY(-2px);box-shadow:0 5px 16px rgba(28,37,48,0.3);}
+  #appsFab svg{width:22px;height:22px;}
+
+  #appsFabPanel{
+    position:fixed;bottom:86px;right:24px;z-index:100;
+    background:#fff;border:1px solid var(--line);border-radius:12px;
+    box-shadow:0 8px 28px rgba(28,37,48,0.18);
+    width:240px;overflow:hidden;display:none;
+  }
+  #appsFabPanel .fabHeader{
+    padding:12px 16px;background:var(--ink);color:#fff;
+    font-family:'IBM Plex Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.05em;
+  }
+  #appsFabPanel a{
+    display:flex;align-items:center;gap:11px;padding:12px 16px;
+    text-decoration:none;color:var(--ink);border-bottom:1px solid #F0F0EE;
+    transition:background .12s;
+  }
+  #appsFabPanel a:last-child{border-bottom:none;}
+  #appsFabPanel a:hover{background:#FAFAF8;}
+  #appsFabPanel .fabIcon{
+    width:34px;height:34px;border-radius:8px;flex-shrink:0;
+    display:flex;align-items:center;justify-content:center;
+    font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:13px;color:#fff;
+  }
+  #appsFabPanel .fabIcon.ehm{background:var(--accent);}
+  #appsFabPanel .fabIcon.cdsc{background:var(--amber);}
+  #appsFabPanel .fabLabel{font-size:13.5px;font-weight:500;}
+  #appsFabPanel .fabSub{font-size:11px;color:var(--ink-soft);margin-top:1px;}
   .pwToggleBtn{
     display:inline-flex;align-items:center;justify-content:center;
     width:38px;flex-shrink:0;border:1px solid var(--line);background:#fff;
@@ -664,6 +703,28 @@
       </div>
     </div>
   </main>
+</div>
+
+<!-- ===================== FLOATING APPS MENU ===================== -->
+<button id="appsFab" onclick="window.toggleAppsFab(event)" title="Aplikasi Terkait">
+  <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="2"/><circle cx="12" cy="5" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="12" cy="19" r="2"/><circle cx="19" cy="19" r="2"/></svg>
+</button>
+<div id="appsFabPanel">
+  <div class="fabHeader">Aplikasi Terkait</div>
+  <a href="https://kehandalan.pages.dev/" target="_blank" rel="noopener noreferrer">
+    <div class="fabIcon ehm">EHM</div>
+    <div>
+      <div class="fabLabel">Equipment Health Monitoring</div>
+      <div class="fabSub">kehandalan.pages.dev</div>
+    </div>
+  </a>
+  <a href="https://www.cdsc.web.id/" target="_blank" rel="noopener noreferrer">
+    <div class="fabIcon cdsc">CD</div>
+    <div>
+      <div class="fabLabel">CDSC</div>
+      <div class="fabSub">cdsc.web.id</div>
+    </div>
+  </a>
 </div>
 
 <!-- ===================== MODAL: FORMAT IMPORT EXCEL ===================== -->
@@ -1167,6 +1228,19 @@ window.doForgotPassword = async function(){
   }
 };
 
+window.toggleAppsFab = function(e){
+  if(e) e.stopPropagation();
+  const panel = document.getElementById("appsFabPanel");
+  panel.style.display = panel.style.display === "block" ? "none" : "block";
+};
+document.addEventListener("click", (e) => {
+  const panel = document.getElementById("appsFabPanel");
+  const fab = document.getElementById("appsFab");
+  if(panel.style.display === "block" && !panel.contains(e.target) && e.target !== fab && !fab.contains(e.target)){
+    panel.style.display = "none";
+  }
+});
+
 window.doLogin = async function(){
   const email = document.getElementById("loginEmail").value.trim();
   const pass = document.getElementById("loginPass").value;
@@ -1228,6 +1302,7 @@ onAuthStateChanged(auth, async (user) => {
 
     document.getElementById("loginScreen").style.display = "none";
     document.getElementById("appScreen").style.display = "block";
+    document.getElementById("appsFab").style.display = "flex";
     document.getElementById("whoName").textContent = currentName;
     document.getElementById("whoRole").textContent = ROLE_LABELS[currentRole] || currentRole;
     const canWrite = ["planner", "admin", "senior_planner"].includes(currentRole);
@@ -1252,6 +1327,8 @@ onAuthStateChanged(auth, async (user) => {
     stopIdleWatcher();
     document.getElementById("loginScreen").style.display = "flex";
     document.getElementById("appScreen").style.display = "none";
+    document.getElementById("appsFab").style.display = "none";
+    document.getElementById("appsFabPanel").style.display = "none";
     if(unsubItems) unsubItems();
   }
 });
