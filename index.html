@@ -802,7 +802,8 @@
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
   getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword,
-  EmailAuthProvider, reauthenticateWithCredential, updatePassword, sendPasswordResetEmail
+  EmailAuthProvider, reauthenticateWithCredential, updatePassword, sendPasswordResetEmail,
+  setPersistence, browserSessionPersistence
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc, setDoc,
@@ -823,6 +824,12 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+// Sesi login TERPISAH per tab/window browser (tidak dibagi lewat seluruh
+// browser). Mencegah kejadian: login sebagai user A di satu tab, lalu
+// login sebagai user B di tab lain, dan tab A ikut tergantikan diam-diam.
+// Konsekuensi: login akan hilang begitu tab/browser ditutup (selain
+// auto-logout 10 menit yang sudah ada) — ini sengaja, demi keamanan.
+setPersistence(auth, browserSessionPersistence).catch(e => console.error("Gagal set auth persistence:", e));
 const db = getFirestore(app);
 
 // ---------------------------------------------------------------------
@@ -1093,7 +1100,8 @@ window.doLogin = async function(){
   try{
     await signInWithEmailAndPassword(auth, email, pass);
   }catch(e){
-    errEl.textContent = "Login gagal. Periksa email/password.";
+    console.error("Login error:", e.code, e.message);
+    errEl.textContent = `Login gagal (${e.code || "unknown"}). Periksa email/password.`;
   }
 };
 
@@ -1151,6 +1159,8 @@ onAuthStateChanged(auth, async (user) => {
 
     startPresenceHeartbeat();
     startIdleWatcher();
+    allItems = []; // buang data sisa sesi sebelumnya sebelum render ulang
+    window.switchView("list");
     listenItems();
   } else {
     currentUser = null;
@@ -1474,7 +1484,7 @@ window.approveUser = async function(uid){
     await updateDoc(doc(db, "users", uid), { role, approvedBy: currentName, approvedAt: serverTimestamp() });
     loadUsersPanel();
   }catch(e){
-    alert("Gagal menyetujui user.");
+    alert("Gagal menyetujui user.\n\nDetail: " + (e.code || e.message || "tidak diketahui"));
     console.error(e);
   }
 };
@@ -1516,9 +1526,11 @@ window.deleteUserProfile = async function(uid){
 window.changeUserRole = async function(uid, newRole){
   try{
     await updateDoc(doc(db, "users", uid), { role: newRole, updatedAt: serverTimestamp() });
+    loadUsersPanel(); // refresh supaya kelihatan tersimpan, bukan diam saja
   }catch(e){
-    alert("Gagal mengubah role. Periksa hak akses.");
+    alert("Gagal mengubah role. Periksa hak akses.\n\nDetail: " + (e.code || e.message || "tidak diketahui"));
     console.error(e);
+    loadUsersPanel(); // kembalikan dropdown ke nilai asli kalau gagal
   }
 };
 
