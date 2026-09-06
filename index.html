@@ -283,12 +283,85 @@
 
   .hint{font-size:11.5px;color:var(--ink-soft);margin-top:4px;}
 
+  /* ===== VIEW TABS ===== */
+  .viewTabs{
+    display:flex;gap:4px;margin-bottom:18px;
+    border-bottom:1px solid var(--line);
+  }
+  .viewTab{
+    padding:9px 4px;margin-right:20px;
+    background:none;border:none;border-bottom:2px solid transparent;
+    font-family:inherit;font-size:13.5px;font-weight:500;color:var(--ink-soft);
+    cursor:pointer;
+  }
+  .viewTab.active{color:var(--accent);border-bottom-color:var(--accent);}
+  .viewTab:hover:not(.active){color:var(--ink);}
+
+  /* ===== DASHBOARD ===== */
+  .dashSection{margin-bottom:28px;}
+  .dashSection h3{font-size:14px;margin-bottom:12px;color:var(--ink);}
+  .dashSection .dashSub{font-size:12px;color:var(--ink-soft);margin-top:-8px;margin-bottom:14px;}
+
+  .barChartRow{
+    display:flex;align-items:center;gap:12px;padding:9px 0;
+    border-bottom:1px solid #F0F0EE;
+  }
+  .barChartRow:last-child{border-bottom:none;}
+  .barChartRow .bcLabel{width:130px;flex-shrink:0;font-size:13px;font-weight:500;}
+  .barChartRow .bcTrack{
+    flex:1;height:18px;background:#EFEFEC;border-radius:4px;position:relative;overflow:hidden;
+  }
+  .barChartRow .bcFill{
+    height:100%;border-radius:4px;background:var(--accent);transition:width .3s;
+  }
+  .barChartRow .bcMeta{
+    width:170px;flex-shrink:0;font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--ink-soft);
+    display:flex;gap:8px;justify-content:flex-end;
+  }
+  .barChartRow .bcMeta .flag-overdue{color:var(--red);}
+  .barChartRow .bcMeta .flag-expiring{color:var(--amber);}
+
+  .planCard{
+    background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:16px 18px;
+  }
+  .planCardGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
+  @media (max-width:720px){.planCardGrid{grid-template-columns:repeat(2,1fr);}}
+
+  .myOverdueList{margin-top:10px;}
+  .myOverdueList .moItem{
+    display:flex;justify-content:space-between;align-items:center;
+    padding:8px 0;border-bottom:1px solid #F0F0EE;font-size:13px;
+  }
+  .myOverdueList .moItem:last-child{border-bottom:none;}
+  .myOverdueList .moDate{font-family:'IBM Plex Mono',monospace;color:var(--red);font-size:12px;}
+
+  /* ===== PAGINATION ===== */
+  .paginationBar{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:12px 14px;border-top:1px solid var(--line);
+    background:#FAFAF8;flex-wrap:wrap;gap:10px;
+  }
+  .paginationBar .pageInfo{font-size:12.5px;color:var(--ink-soft);}
+  .paginationBar .pageControls{display:flex;align-items:center;gap:6px;}
+  .paginationBar .pageBtn{
+    border:1px solid var(--line);background:#fff;border-radius:6px;
+    padding:5px 10px;font-size:12.5px;cursor:pointer;color:var(--ink);
+  }
+  .paginationBar .pageBtn:disabled{opacity:0.4;cursor:not-allowed;}
+  .paginationBar .pageBtn:hover:not(:disabled){background:#F0F0EE;}
+  .paginationBar select{
+    border:1px solid var(--line);border-radius:6px;padding:5px 7px;font-size:12.5px;font-family:inherit;
+  }
   @media (max-width:720px){
     main{padding:16px;}
     .modalRow2{grid-template-columns:1fr;}
     header.topbar{padding:12px 16px;}
     .tableWrap{overflow-x:auto;}
     table{min-width:760px;}
+    .barChartRow{flex-wrap:wrap;}
+    .barChartRow .bcLabel{width:100%;}
+    .barChartRow .bcMeta{width:100%;justify-content:flex-start;}
   }
 </style>
 </head>
@@ -330,12 +403,16 @@
   </header>
 
   <main>
-    <!-- Manager summary cards -->
-    <div class="summaryRow" id="summaryRow" style="display:none;"></div>
+    <div class="viewTabs">
+      <button class="viewTab active" id="tabList" onclick="window.switchView('list')">Daftar Pekerjaan</button>
+      <button class="viewTab" id="tabDash" onclick="window.switchView('dashboard')">Dashboard Kinerja</button>
+    </div>
 
+    <!-- ===== VIEW: DAFTAR PEKERJAAN ===== -->
+    <div id="viewList">
     <div class="toolbar">
       <div class="filters">
-        <select id="filterKategori" onchange="window.renderTable()">
+        <select id="filterKategori" onchange="window.onFilterChange()">
           <option value="">Semua Kategori</option>
           <option>Maintenance</option>
           <option>OYSP</option>
@@ -344,10 +421,10 @@
           <option>Training</option>
           <option>Lainnya</option>
         </select>
-        <select id="filterPlanner" onchange="window.renderTable()">
+        <select id="filterPlanner" onchange="window.onFilterChange()">
           <option value="">Semua Planner</option>
         </select>
-        <select id="filterSignal" onchange="window.renderTable()">
+        <select id="filterSignal" onchange="window.onFilterChange()">
           <option value="">Semua</option>
           <option value="overdue">Progress Terlambat</option>
           <option value="expiring">Kontrak Mendekati Habis</option>
@@ -379,7 +456,24 @@
         <div class="big">—</div>
         Belum ada pekerjaan pengadaan yang tercatat.
       </div>
+      <div class="paginationBar" id="paginationBar" style="display:none;">
+        <div class="pageInfo" id="pageInfo"></div>
+        <div class="pageControls">
+          <select id="pageSizeSelect" onchange="window.onPageSizeChange()">
+            <option value="10">10 / halaman</option>
+            <option value="20" selected>20 / halaman</option>
+            <option value="50">50 / halaman</option>
+          </select>
+          <button class="pageBtn" onclick="window.goToPage(1)" id="btnFirst">« Awal</button>
+          <button class="pageBtn" onclick="window.goToPage(currentPage-1)" id="btnPrev">‹ Sebelumnya</button>
+          <button class="pageBtn" onclick="window.goToPage(currentPage+1)" id="btnNext">Berikutnya ›</button>
+        </div>
+      </div>
     </div>
+    </div>
+
+    <!-- ===== VIEW: DASHBOARD KINERJA ===== -->
+    <div id="viewDashboard" style="display:none;"></div>
   </main>
 </div>
 
@@ -542,6 +636,8 @@ let currentRole = null; // "planner" | "manager"
 let currentName = "";
 let allItems = [];
 let unsubItems = null;
+let currentPage = 1;
+let pageSize = 20;
 
 // ---------------------------------------------------------------------
 // Show/hide field "Lainnya" untuk kategori & jenis kontrak
@@ -647,7 +743,6 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById("whoRole").textContent = currentRole;
     document.getElementById("btnAdd").style.display = currentRole === "planner" ? "inline-flex" : "none";
     document.getElementById("btnImport").style.display = currentRole === "planner" ? "inline-flex" : "none";
-    document.getElementById("summaryRow").style.display = currentRole === "manager" ? "flex" : "none";
 
     listenItems();
   } else {
@@ -668,8 +763,8 @@ function listenItems(){
     allItems = [];
     snap.forEach(d => allItems.push({ id: d.id, ...d.data() }));
     populatePlannerFilter();
-    renderSummary();
     renderTable();
+    renderDashboard();
   });
 }
 
@@ -708,32 +803,165 @@ function populatePlannerFilter(){
 }
 
 // ---------------------------------------------------------------------
-// RENDER: SUMMARY (manager)
+// VIEW SWITCHING
 // ---------------------------------------------------------------------
-function renderSummary(){
-  if(currentRole !== "manager") return;
-  const el = document.getElementById("summaryRow");
+window.switchView = function(view){
+  const isList = view === "list";
+  document.getElementById("viewList").style.display = isList ? "block" : "none";
+  document.getElementById("viewDashboard").style.display = isList ? "none" : "block";
+  document.getElementById("tabList").classList.toggle("active", isList);
+  document.getElementById("tabDash").classList.toggle("active", !isList);
+  if(!isList) renderDashboard();
+};
+
+function escapeHtmlAttr(str){ return escapeHtml(str); }
+
+// ---------------------------------------------------------------------
+// RENDER: DASHBOARD KINERJA
+// Catatan: ini gambaran KONDISI SAAT INI, bukan tren dari waktu ke waktu —
+// app belum menyimpan snapshot historis harian.
+// ---------------------------------------------------------------------
+function renderDashboard(){
+  const el = document.getElementById("viewDashboard");
   const total = allItems.length;
+  const doneCount = allItems.filter(i => getTotalProgress(i) >= 100).length;
   const overdueCount = allItems.filter(isProgressOverdue).length;
   const expiringCount = allItems.filter(isExpiringSoon).length;
-  const doneCount = allItems.filter(i => getTotalProgress(i) >= 100).length;
+  const berjalanCount = total - doneCount;
 
-  el.innerHTML = `
-    <div class="sumCard">
-      <div class="num mono">${total}</div>
-      <div class="lbl">Total Pekerjaan</div>
+  let html = `
+    <div class="dashSection">
+      <h3>Kesehatan Project (Kondisi Saat Ini)</h3>
+      <div class="summaryRow">
+        <div class="sumCard"><div class="num mono">${total}</div><div class="lbl">Total Pekerjaan</div></div>
+        <div class="sumCard"><div class="num mono">${doneCount}</div><div class="lbl">Selesai (100%)</div></div>
+        <div class="sumCard"><div class="num mono">${berjalanCount}</div><div class="lbl">Sedang Berjalan</div></div>
+        <div class="sumCard overdue"><div class="num mono">${overdueCount}</div><div class="lbl">Progress Terlambat</div></div>
+        <div class="sumCard overdue"><div class="num mono">${expiringCount}</div><div class="lbl">Kontrak Mendekati Habis</div></div>
+      </div>
     </div>
-    <div class="sumCard">
-      <div class="num mono">${doneCount}</div>
-      <div class="lbl">Selesai (100%)</div>
+
+    <div class="dashSection">
+      <h3>Distribusi per Kategori</h3>
+      <div class="planCard">
+        ${renderCategoryBars()}
+      </div>
     </div>
-    <div class="sumCard overdue">
-      <div class="num mono">${overdueCount}</div>
-      <div class="lbl">Progress Terlambat</div>
-    </div>
-    <div class="sumCard overdue">
-      <div class="num mono">${expiringCount}</div>
-      <div class="lbl">Kontrak Mendekati Habis</div>
+  `;
+
+  if(currentRole === "manager"){
+    html += `
+      <div class="dashSection">
+        <h3>Kinerja per Planner</h3>
+        <div class="dashSub">Rata-rata progress dari seluruh pekerjaan yang dipegang masing-masing planner.</div>
+        <div class="planCard">
+          ${renderPlannerBars()}
+        </div>
+      </div>
+    `;
+  }
+
+  if(currentRole === "planner"){
+    html += renderMyPerformance();
+  }
+
+  el.innerHTML = html;
+}
+
+function renderCategoryBars(){
+  const cats = {};
+  allItems.forEach(i => {
+    const k = i.kategori || "Lainnya";
+    if(!cats[k]) cats[k] = { count: 0, sumProgress: 0 };
+    cats[k].count++;
+    cats[k].sumProgress += getTotalProgress(i);
+  });
+  const keys = Object.keys(cats);
+  if(keys.length === 0) return `<div class="hint">Belum ada data.</div>`;
+  const maxCount = Math.max(...keys.map(k => cats[k].count));
+
+  return keys.map(k => {
+    const c = cats[k];
+    const avgProgress = Math.round(c.sumProgress / c.count);
+    const widthPct = Math.max(4, Math.round((c.count / maxCount) * 100));
+    return `
+      <div class="barChartRow">
+        <div class="bcLabel">${escapeHtml(k)}</div>
+        <div class="bcTrack"><div class="bcFill" style="width:${widthPct}%"></div></div>
+        <div class="bcMeta">
+          <span>${c.count} pekerjaan</span>
+          <span>avg ${avgProgress}%</span>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function renderPlannerBars(){
+  const planners = {};
+  allItems.forEach(i => {
+    const p = i.pic || "(Tidak diisi)";
+    if(!planners[p]) planners[p] = { count:0, sumProgress:0, overdue:0, done:0 };
+    planners[p].count++;
+    planners[p].sumProgress += getTotalProgress(i);
+    if(isProgressOverdue(i)) planners[p].overdue++;
+    if(getTotalProgress(i) >= 100) planners[p].done++;
+  });
+  const keys = Object.keys(planners).sort((a,b) => {
+    const avgA = planners[a].sumProgress / planners[a].count;
+    const avgB = planners[b].sumProgress / planners[b].count;
+    return avgB - avgA;
+  });
+  if(keys.length === 0) return `<div class="hint">Belum ada data.</div>`;
+
+  return keys.map(p => {
+    const d = planners[p];
+    const avgProgress = Math.round(d.sumProgress / d.count);
+    return `
+      <div class="barChartRow">
+        <div class="bcLabel">${escapeHtml(p)}</div>
+        <div class="bcTrack"><div class="bcFill" style="width:${avgProgress}%"></div></div>
+        <div class="bcMeta">
+          <span>${d.count} tugas · ${d.done} selesai</span>
+          ${d.overdue > 0 ? `<span class="flag-overdue">${d.overdue} terlambat</span>` : ""}
+          <span>avg ${avgProgress}%</span>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function renderMyPerformance(){
+  const myItems = allItems.filter(i => i.pic === currentName);
+  const total = myItems.length;
+  const done = myItems.filter(i => getTotalProgress(i) >= 100).length;
+  const overdue = myItems.filter(isProgressOverdue);
+  const avgProgress = total > 0 ? Math.round(myItems.reduce((s,i) => s + getTotalProgress(i), 0) / total) : 0;
+
+  const overdueListHtml = overdue.length === 0
+    ? `<div class="hint">Tidak ada pekerjaan yang terlambat dari target. Baik.</div>`
+    : `<div class="myOverdueList">${overdue.map(i => `
+        <div class="moItem">
+          <span>${escapeHtml(i.namaPekerjaan)}</span>
+          <span class="moDate">Target: ${fmtDate(i.targetSelesai)}</span>
+        </div>
+      `).join("")}</div>`;
+
+  return `
+    <div class="dashSection">
+      <h3>Kinerja Saya</h3>
+      <div class="planCard">
+        <div class="planCardGrid">
+          <div><div class="num mono" style="font-size:22px;">${total}</div><div class="lbl">Total Tugas Saya</div></div>
+          <div><div class="num mono" style="font-size:22px;">${done}</div><div class="lbl">Selesai</div></div>
+          <div><div class="num mono" style="font-size:22px;">${avgProgress}%</div><div class="lbl">Rata-rata Progress</div></div>
+          <div><div class="num mono" style="font-size:22px;color:${overdue.length>0?'var(--red)':'inherit'}">${overdue.length}</div><div class="lbl">Terlambat</div></div>
+        </div>
+        <div style="margin-top:14px;">
+          <div class="stageGroupTitle" style="margin-bottom:8px;">Pekerjaan Saya yang Terlambat</div>
+          ${overdueListHtml}
+        </div>
+      </div>
     </div>
   `;
 }
@@ -744,6 +972,22 @@ function renderSummary(){
 function fmtDate(dateStr){
   return dateStr ? new Date(dateStr).toLocaleDateString('id-ID', {day:'2-digit',month:'short',year:'numeric'}) : "—";
 }
+
+window.onFilterChange = function(){
+  currentPage = 1;
+  window.renderTable();
+};
+
+window.goToPage = function(page){
+  currentPage = page;
+  window.renderTable();
+};
+
+window.onPageSizeChange = function(){
+  pageSize = parseInt(document.getElementById("pageSizeSelect").value, 10);
+  currentPage = 1;
+  window.renderTable();
+};
 
 window.renderTable = function(){
   const fKategori = document.getElementById("filterKategori").value;
@@ -759,15 +1003,30 @@ window.renderTable = function(){
 
   const tbody = document.getElementById("tableBody");
   const emptyState = document.getElementById("emptyState");
+  const paginationBar = document.getElementById("paginationBar");
 
   if(items.length === 0){
     tbody.innerHTML = "";
     emptyState.style.display = "block";
+    paginationBar.style.display = "none";
     return;
   }
   emptyState.style.display = "none";
 
-  tbody.innerHTML = items.map(item => {
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  if(currentPage > totalPages) currentPage = totalPages;
+  if(currentPage < 1) currentPage = 1;
+  const startIdx = (currentPage - 1) * pageSize;
+  const pageItems = items.slice(startIdx, startIdx + pageSize);
+
+  paginationBar.style.display = "flex";
+  document.getElementById("pageInfo").textContent =
+    `Menampilkan ${startIdx + 1}–${Math.min(startIdx + pageSize, items.length)} dari ${items.length} pekerjaan`;
+  document.getElementById("btnFirst").disabled = currentPage <= 1;
+  document.getElementById("btnPrev").disabled = currentPage <= 1;
+  document.getElementById("btnNext").disabled = currentPage >= totalPages;
+
+  tbody.innerHTML = pageItems.map(item => {
     const total = getTotalProgress(item);
     const isDone = total >= 100;
     const overdue = isProgressOverdue(item);
