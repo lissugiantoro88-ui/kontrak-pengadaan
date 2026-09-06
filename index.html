@@ -584,7 +584,7 @@
     <div class="brand">
       <span class="dot"></span>
       <div>
-        <h1>Monitoring Perencanaan Pengadaan Kontrak</h1>
+        <h1><a href="https://kontrak-pengadaan.pages.dev/" style="color:inherit;text-decoration:none;">Monitoring Perencanaan Pengadaan Kontrak</a></h1>
         <div class="sub">TECHNICAL SUPPORT — PT KPB</div>
       </div>
     </div>
@@ -1048,6 +1048,12 @@ const STAGE_DETAIL_FIELDS = {
   quotation: [
     { key:"vendors", label:"Vendor yang Mengirim Penawaran", type:"textarea", placeholder:"Satu vendor per baris" }
   ],
+  lingkupKAK: [
+    { key:"lingkupUtama", label:"Lingkup Utama", type:"text" }
+  ],
+  oe: [
+    { key:"polaPikir", label:"Pola Pikir OE", type:"select", options:["Last PO","Quotation Vendor"] }
+  ],
   izinMetode: [
     { key:"noSurat", label:"Nomor Surat Izin Prinsip", type:"text" },
     { key:"tanggalSurat", label:"Tanggal Surat", type:"date" },
@@ -1159,6 +1165,15 @@ function renderStageChecklist(savedStages, savedStageDetails){
               <div class="stageDetailField">
                 <label>${f.label}</label>
                 <textarea id="stageDetail_${s.key}_${f.key}" rows="2" placeholder="${f.placeholder || ""}">${escapeHtml(val)}</textarea>
+              </div>`;
+          } else if(f.type === "select"){
+            html += `
+              <div class="stageDetailField">
+                <label>${f.label}</label>
+                <select id="stageDetail_${s.key}_${f.key}">
+                  <option value="">— Pilih —</option>
+                  ${f.options.map(opt => `<option value="${escapeHtml(opt)}" ${val === opt ? "selected" : ""}>${escapeHtml(opt)}</option>`).join("")}
+                </select>
               </div>`;
           } else {
             html += `
@@ -2904,7 +2919,7 @@ function setFieldPermissions(isEdit){
                   "fPic","fEffective","fProgressNote","fKet"];
   fields.forEach(id => { document.getElementById(id).disabled = readOnlyAll; });
   document.querySelectorAll("#stageChecklist input[type=checkbox]").forEach(cb => { cb.disabled = readOnlyAll; });
-  document.querySelectorAll(".stageDetailPanel input, .stageDetailPanel textarea").forEach(el => { el.disabled = readOnlyAll; });
+  document.querySelectorAll(".stageDetailPanel input, .stageDetailPanel textarea, .stageDetailPanel select").forEach(el => { el.disabled = readOnlyAll; });
   // contenteditable bukan <input>, tidak punya properti "disabled" — dikunci via attribute contenteditable.
   document.getElementById("fDasarPengadaan").contentEditable = readOnlyAll ? "false" : "true";
   // Target tanggal: planner/admin/senior_planner/manager boleh isi — viewer TIDAK sama sekali.
