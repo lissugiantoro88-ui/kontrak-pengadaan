@@ -203,6 +203,9 @@
     background:#FAFAF8;
     white-space:nowrap;
   }
+  thead th.sortable{cursor:pointer;user-select:none;}
+  thead th.sortable:hover{color:var(--ink);}
+  thead th.sortable span{margin-left:4px;font-family:'IBM Plex Mono',monospace;color:var(--accent);}
   tbody td{
     padding:11px 14px;
     border-bottom:1px solid var(--line);
@@ -337,6 +340,23 @@
   .modalFooter{display:flex;justify-content:flex-end;gap:8px;margin-top:18px;}
 
   .hint{font-size:11.5px;color:var(--ink-soft);margin-top:4px;}
+
+  .richToolbar{display:flex;gap:4px;margin-bottom:6px;flex-wrap:wrap;}
+  .richToolbar button{
+    border:1px solid var(--line);background:#fff;border-radius:5px;
+    padding:4px 10px;font-size:12.5px;cursor:pointer;color:var(--ink);
+    font-family:inherit;
+  }
+  .richToolbar button:hover{background:#F0F0EE;}
+  .richEditor{
+    border:1px solid var(--line);border-radius:6px;padding:10px 12px;
+    min-height:110px;max-height:320px;overflow-y:auto;
+    font-size:13.5px;line-height:1.55;background:#fff;color:var(--ink);
+  }
+  .richEditor:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
+  .richEditor ul, .richEditor ol{margin:4px 0 4px 22px;}
+  .richEditor p{margin:0 0 6px;}
+  .richEditor[contenteditable="false"]{background:#FAFAF8;color:var(--ink-soft);}
 
   /* ===== VIEW TABS ===== */
   .viewTabs{
@@ -525,6 +545,7 @@
     <div class="viewTabs" id="viewTabsBar">
       <button class="viewTab active" id="tabList" onclick="window.switchView('list')">Daftar Pekerjaan</button>
       <button class="viewTab" id="tabUsers" style="display:none;" onclick="window.switchView('users')">Manajemen User</button>
+      <button class="viewTab" id="tabLog" style="display:none;" onclick="window.switchView('log')">Log Aktivitas</button>
     </div>
 
     <!-- ===== VIEW: DAFTAR PEKERJAAN (+ ringkasan kinerja) ===== -->
@@ -570,11 +591,11 @@
       <table>
         <thead>
           <tr>
-            <th>Pekerjaan</th>
-            <th>Kategori</th>
-            <th>Planner</th>
-            <th>Progres (Total)</th>
-            <th>Target / Expiry</th>
+            <th class="sortable" onclick="window.setSortColumn('nama')">Pekerjaan<span id="sortIcon_nama"></span></th>
+            <th class="sortable" onclick="window.setSortColumn('kategori')">Kategori<span id="sortIcon_kategori"></span></th>
+            <th class="sortable" onclick="window.setSortColumn('planner')">Planner<span id="sortIcon_planner"></span></th>
+            <th class="sortable" onclick="window.setSortColumn('progress')">Progres (Total)<span id="sortIcon_progress"></span></th>
+            <th class="sortable" onclick="window.setSortColumn('target')">Target / Expiry<span id="sortIcon_target"></span></th>
             <th style="width:70px;"></th>
           </tr>
         </thead>
@@ -627,6 +648,19 @@
             <tbody id="usersTableBody"></tbody>
           </table>
         </div>
+      </div>
+    </div>
+
+    <!-- ===== VIEW: LOG AKTIVITAS (admin only) ===== -->
+    <div id="viewLog" style="display:none;">
+      <div class="hint" style="margin-bottom:14px;">Menampilkan 200 aktivitas terakhir. Log ini permanen — tidak bisa diubah atau dihapus oleh siapa pun, termasuk admin (demi integritas audit trail).</div>
+      <div class="tableWrap">
+        <table>
+          <thead>
+            <tr><th>Waktu</th><th>Pekerjaan</th><th>Aksi</th><th>Perubahan</th><th>Oleh</th></tr>
+          </thead>
+          <tbody id="logTableBody"></tbody>
+        </table>
       </div>
     </div>
   </main>
@@ -746,6 +780,20 @@
       <input type="text" id="fNama" placeholder="mis. Pengadaan Jasa Inspeksi Bejana Tekan">
     </div>
 
+    <div class="field">
+      <label>Dasar Pengadaan</label>
+      <div class="hint" style="margin-bottom:6px;">Memo, Notulen Rapat, Disposisi, Email, FPPM, atau lainnya — tulis bebas dengan detail (nomor, tanggal, perihal, dll).</div>
+      <div class="richToolbar">
+        <button type="button" onclick="window.richExec('bold')" title="Tebal"><b>B</b></button>
+        <button type="button" onclick="window.richExec('italic')" title="Miring"><i>I</i></button>
+        <button type="button" onclick="window.richExec('underline')" title="Garis bawah"><u>U</u></button>
+        <button type="button" onclick="window.richExec('insertUnorderedList')" title="Daftar bullet">• List</button>
+        <button type="button" onclick="window.richExec('insertOrderedList')" title="Daftar bernomor">1. List</button>
+        <button type="button" onclick="window.richExec('removeFormat')" title="Hapus format">Clear</button>
+      </div>
+      <div id="fDasarPengadaan" class="richEditor" contenteditable="true"></div>
+    </div>
+
     <div class="modalRow2">
       <div class="field">
         <label>Kategori</label>
@@ -837,7 +885,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc, setDoc,
-  deleteDoc, onSnapshot, serverTimestamp, query, orderBy, writeBatch
+  deleteDoc, onSnapshot, serverTimestamp, query, orderBy, writeBatch, limit
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 // =====================================================================
@@ -904,6 +952,8 @@ let allItems = [];
 let unsubItems = null;
 let currentPage = 1;
 let pageSize = 20;
+let sortColumn = null; // null = urutan default (terakhir diupdate)
+let sortDirection = "asc";
 let suppressAuthCheck = false; // cegah race condition saat proses registrasi
 let presenceHeartbeatTimer = null;
 let presenceWatchTimer = null;
@@ -1186,6 +1236,7 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById("btnImportFormat").style.display = canWrite ? "inline-flex" : "none";
     document.getElementById("btnExportPdf").style.display = ["manager", "admin", "senior_planner"].includes(currentRole) ? "inline-flex" : "none";
     document.getElementById("tabUsers").style.display = ["admin", "senior_planner"].includes(currentRole) ? "inline-block" : "none";
+    document.getElementById("tabLog").style.display = currentRole === "admin" ? "inline-block" : "none";
     document.getElementById("viewTabsBar").style.display = ["admin", "senior_planner"].includes(currentRole) ? "flex" : "none";
 
     startPresenceHeartbeat();
@@ -1311,8 +1362,10 @@ function populatePlannerFilter(){
 window.switchView = function(view){
   document.getElementById("viewList").style.display = view === "list" ? "block" : "none";
   document.getElementById("viewUsers").style.display = view === "users" ? "block" : "none";
+  document.getElementById("viewLog").style.display = view === "log" ? "block" : "none";
   document.getElementById("tabList").classList.toggle("active", view === "list");
   document.getElementById("tabUsers").classList.toggle("active", view === "users");
+  document.getElementById("tabLog").classList.toggle("active", view === "log");
   if(view === "list") renderStatusOverview();
   if(view === "users"){
     loadUsersPanel();
@@ -1320,6 +1373,7 @@ window.switchView = function(view){
   } else {
     stopPresenceWatch();
   }
+  if(view === "log") loadActivityLog();
 };
 
 window.toggleDashDetail = function(){
@@ -1352,6 +1406,81 @@ function startIdleWatcher(){
 function stopIdleWatcher(){
   IDLE_EVENTS.forEach(evt => document.removeEventListener(evt, resetIdleTimer));
   if(idleTimer){ clearTimeout(idleTimer); idleTimer = null; }
+}
+
+// ---------------------------------------------------------------------
+// ACTIVITY LOG — jejak siapa mengubah apa. Ditulis oleh siapa saja yang
+// melakukan perubahan, tapi HANYA admin yang bisa membacanya (rules).
+// ---------------------------------------------------------------------
+const FIELD_LABELS = {
+  namaPekerjaan: "Nama Pekerjaan", kategori: "Kategori", contractType: "Jenis Kontrak",
+  pic: "Planner", targetSelesai: "Target Selesai", effectiveDate: "Effective Date",
+  progressNote: "Catatan Progress", keterangan: "Keterangan", dasarPengadaan: "Dasar Pengadaan"
+};
+
+async function logActivity(itemId, itemName, action, changesSummary){
+  try{
+    await addDoc(collection(db, "activity_log"), {
+      itemId, itemName, action, changesSummary,
+      changedBy: currentName, changedByRole: currentRole,
+      changedAt: serverTimestamp()
+    });
+  }catch(e){ console.error("Gagal menulis activity log:", e); } // jangan sampai gagal log memblokir aksi utama
+}
+
+function buildChangeSummary(oldItem, newPayload){
+  if(!oldItem) return "Dibuat baru";
+  const parts = [];
+  Object.keys(FIELD_LABELS).forEach(key => {
+    const oldVal = oldItem[key] || "";
+    const newVal = newPayload[key] !== undefined ? newPayload[key] : oldVal;
+    if(String(oldVal) !== String(newVal)){
+      if(key === "dasarPengadaan"){
+        parts.push("Dasar Pengadaan diubah");
+      } else {
+        parts.push(`${FIELD_LABELS[key]}: "${oldVal || "—"}" → "${newVal || "—"}"`);
+      }
+    }
+  });
+  if(newPayload.stages && oldItem.stages){
+    const oldPct = getTotalProgress(oldItem);
+    const newTotal = STAGE_TEMPLATE.reduce((s, st) => s + (newPayload.stages[st.key] ? st.weight : 0), 0);
+    if(oldPct !== newTotal) parts.push(`Progress: ${oldPct}% → ${newTotal}%`);
+  }
+  return parts.length ? parts.join(" · ") : "Tidak ada perubahan terdeteksi";
+}
+
+async function loadActivityLog(){
+  const tbody = document.getElementById("logTableBody");
+  tbody.innerHTML = `<tr><td colspan="5">Memuat...</td></tr>`;
+  try{
+    const q = query(collection(db, "activity_log"), orderBy("changedAt", "desc"), limit(200));
+    const snap = await getDocs(q);
+    if(snap.empty){
+      tbody.innerHTML = `<tr><td colspan="5">Belum ada aktivitas tercatat.</td></tr>`;
+      return;
+    }
+    const rows = [];
+    snap.forEach(d => {
+      const l = d.data();
+      const waktu = l.changedAt && l.changedAt.seconds
+        ? new Date(l.changedAt.seconds * 1000).toLocaleString('id-ID', {dateStyle:'short', timeStyle:'short'})
+        : "—";
+      rows.push(`
+        <tr>
+          <td class="mono" style="font-size:11.5px;">${waktu}</td>
+          <td>${escapeHtml(l.itemName || "—")}</td>
+          <td>${escapeHtml(l.action || "—")}</td>
+          <td style="font-size:12.5px;">${escapeHtml(l.changesSummary || "—")}</td>
+          <td>${escapeHtml(l.changedBy || "—")} <span class="hint" style="display:inline;">(${ROLE_LABELS[l.changedByRole] || l.changedByRole || "?"})</span></td>
+        </tr>
+      `);
+    });
+    tbody.innerHTML = rows.join("");
+  }catch(e){
+    tbody.innerHTML = `<tr><td colspan="5">Gagal memuat log.</td></tr>`;
+    console.error(e);
+  }
 }
 
 // ---------------------------------------------------------------------
@@ -2160,7 +2289,7 @@ function getFilteredItems(){
     items = items.filter(i => {
       const haystack = [
         i.namaPekerjaan, i.pic, i.kategori, i.contractType,
-        i.progressNote, i.keterangan
+        i.progressNote, i.keterangan, stripHtmlForSearch(i.dasarPengadaan)
       ].filter(Boolean).join(" ").toLowerCase();
       return haystack.includes(fSearch);
     });
@@ -2178,8 +2307,61 @@ function getFilteredItems(){
   return { items, filterDescription: filterLabels.length ? filterLabels.join(" · ") : "Semua Data" };
 }
 
+function getSortDateValue(item){
+  // Kolom Target/Expiry itu gabungan 2 field beda (tergantung status) —
+  // sort-nya ikut nilai yang SEDANG ditampilkan di kolom itu untuk baris ybs.
+  const isDone = getTotalProgress(item) >= 100;
+  const raw = isDone ? item.effectiveDate : item.targetSelesai;
+  return raw ? new Date(raw).getTime() : null;
+}
+
+function applySorting(items){
+  if(!sortColumn) return items;
+  const dir = sortDirection === "asc" ? 1 : -1;
+  const sorted = [...items];
+  sorted.sort((a, b) => {
+    let va, vb;
+    if(sortColumn === "nama"){ va = (a.namaPekerjaan||"").toLowerCase(); vb = (b.namaPekerjaan||"").toLowerCase(); }
+    else if(sortColumn === "kategori"){ va = (a.kategori||"").toLowerCase(); vb = (b.kategori||"").toLowerCase(); }
+    else if(sortColumn === "planner"){ va = (a.pic||"").toLowerCase(); vb = (b.pic||"").toLowerCase(); }
+    else if(sortColumn === "progress"){ va = getTotalProgress(a); vb = getTotalProgress(b); }
+    else if(sortColumn === "target"){
+      va = getSortDateValue(a); vb = getSortDateValue(b);
+      // Tanggal kosong selalu di akhir, terlepas arah sort naik/turun.
+      if(va === null && vb === null) return 0;
+      if(va === null) return 1;
+      if(vb === null) return -1;
+    }
+    if(va < vb) return -1 * dir;
+    if(va > vb) return 1 * dir;
+    return 0;
+  });
+  return sorted;
+}
+
+window.setSortColumn = function(col){
+  if(sortColumn === col){
+    sortDirection = sortDirection === "asc" ? "desc" : "asc";
+  } else {
+    sortColumn = col;
+    sortDirection = "asc";
+  }
+  currentPage = 1;
+  window.renderTable();
+};
+
+function updateSortIcons(){
+  ["nama","kategori","planner","progress","target"].forEach(col => {
+    const el = document.getElementById(`sortIcon_${col}`);
+    if(!el) return;
+    el.textContent = sortColumn === col ? (sortDirection === "asc" ? "▲" : "▼") : "";
+  });
+}
+
 window.renderTable = function(){
-  const { items } = getFilteredItems();
+  let { items } = getFilteredItems();
+  items = applySorting(items);
+  updateSortIcons();
 
   const tbody = document.getElementById("tableBody");
   const emptyState = document.getElementById("emptyState");
@@ -2283,6 +2465,26 @@ function resetLainnyaWraps(){
   document.getElementById("fContractTypeLainnya").value = "";
 }
 
+window.richExec = function(cmd){
+  document.execCommand(cmd, false, null);
+  document.getElementById("fDasarPengadaan").focus();
+};
+
+// Sanitasi dasar: buang <script> dan atribut event handler (onclick, dst)
+// dari HTML yang dihasilkan contenteditable — jaga-jaga terhadap paste
+// konten aneh dari sumber luar. Bukan sanitasi tingkat enterprise, tapi
+// cukup untuk tool internal dengan model kepercayaan tim kecil.
+function sanitizeRichHtml(html){
+  return (html || "")
+    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
+    .replace(/\son\w+="[^"]*"/gi, "")
+    .replace(/\son\w+='[^']*'/gi, "");
+}
+
+function stripHtmlForSearch(html){
+  return (html || "").replace(/<[^>]*>/g, " ");
+}
+
 window.openAddModal = function(){
   document.getElementById("modalTitle").textContent = "Tambah Pekerjaan";
   document.getElementById("itemId").value = "";
@@ -2294,6 +2496,7 @@ window.openAddModal = function(){
   document.getElementById("fTarget").value = "";
   document.getElementById("fEffective").value = "";
   document.getElementById("fProgressNote").value = "";
+  document.getElementById("fDasarPengadaan").innerHTML = "";
   document.getElementById("fKet").value = "";
   document.getElementById("modalErr").textContent = "";
   document.getElementById("targetEditHint").textContent = "";
@@ -2332,6 +2535,7 @@ window.openEditModal = function(id){
   document.getElementById("fTarget").value = item.targetSelesai || "";
   document.getElementById("fEffective").value = item.effectiveDate || "";
   document.getElementById("fProgressNote").value = item.progressNote || "";
+  document.getElementById("fDasarPengadaan").innerHTML = item.dasarPengadaan || "";
   document.getElementById("fKet").value = item.keterangan || "";
   document.getElementById("modalErr").textContent = "";
   renderStageChecklist(item.stages);
@@ -2355,6 +2559,8 @@ function setFieldPermissions(isEdit){
                   "fPic","fEffective","fProgressNote","fKet"];
   fields.forEach(id => { document.getElementById(id).disabled = readOnlyAll; });
   document.querySelectorAll("#stageChecklist input[type=checkbox]").forEach(cb => { cb.disabled = readOnlyAll; });
+  // contenteditable bukan <input>, tidak punya properti "disabled" — dikunci via attribute contenteditable.
+  document.getElementById("fDasarPengadaan").contentEditable = readOnlyAll ? "false" : "true";
   // Target tanggal: planner/admin/senior_planner/manager boleh isi — viewer TIDAK sama sekali.
   document.getElementById("fTarget").disabled = isViewer;
 }
@@ -2373,12 +2579,15 @@ window.saveItem = async function(){
   try{
     if(currentRole === "manager" && id){
       // Manager hanya boleh update targetSelesai
+      const existingForLog = allItems.find(i => i.id === id);
       await updateDoc(doc(db, "procurement_items", id), {
         targetSelesai: targetVal,
         targetLastEditedBy: currentName,
         targetLastEditedAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
+      logActivity(id, existingForLog ? existingForLog.namaPekerjaan : "?", "Update Target",
+        `Target Selesai: "${(existingForLog && existingForLog.targetSelesai) || "—"}" → "${targetVal || "—"}"`);
       window.closeModal();
       return;
     }
@@ -2407,6 +2616,7 @@ window.saveItem = async function(){
       targetSelesai: targetVal,
       effectiveDate: document.getElementById("fEffective").value,
       progressNote: document.getElementById("fProgressNote").value.trim(),
+      dasarPengadaan: sanitizeRichHtml(document.getElementById("fDasarPengadaan").innerHTML.trim()),
       keterangan: document.getElementById("fKet").value.trim(),
       stages: newStages,
       updatedAt: serverTimestamp()
@@ -2418,12 +2628,15 @@ window.saveItem = async function(){
     if(stagesChanged) payload.progressUpdatedAt = serverTimestamp();
 
     if(id){
+      const changesSummary = buildChangeSummary(existingItem, payload);
       await updateDoc(doc(db, "procurement_items", id), payload);
+      logActivity(id, nama, "Update", changesSummary);
     } else {
       payload.createdAt = serverTimestamp();
       payload.createdBy = currentName;
       payload.progressUpdatedAt = serverTimestamp(); // item baru = mulai hitung dari sini
-      await addDoc(collection(db, "procurement_items"), payload);
+      const newRef = await addDoc(collection(db, "procurement_items"), payload);
+      logActivity(newRef.id, nama, "Dibuat", "Item pekerjaan baru dibuat");
     }
     window.closeModal();
   }catch(e){
@@ -2436,8 +2649,10 @@ window.deleteItem = async function(){
   const id = document.getElementById("itemId").value;
   if(!id) return;
   if(!confirm("Hapus pekerjaan ini? Tindakan tidak bisa dibatalkan.")) return;
+  const existingForLog = allItems.find(i => i.id === id);
   try{
     await deleteDoc(doc(db, "procurement_items", id));
+    logActivity(id, existingForLog ? existingForLog.namaPekerjaan : "?", "Hapus", "Item pekerjaan dihapus permanen");
     window.closeModal();
   }catch(e){
     document.getElementById("modalErr").textContent = "Gagal menghapus.";
@@ -2611,6 +2826,7 @@ window.handleExcelImport = function(event){
         imported += chunk.length;
       }
 
+      logActivity(null, "(Import Excel)", "Import", `${imported} pekerjaan diimpor dari file Excel, ${skipped} baris kosong dilewati`);
       alert(`Import selesai.\nBerhasil: ${imported} pekerjaan.\nDilewati (baris kosong): ${skipped}.`);
     }catch(err){
       console.error(err);
