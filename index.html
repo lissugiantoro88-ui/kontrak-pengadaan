@@ -354,7 +354,11 @@
           <option value="done">Sudah Selesai (100%)</option>
         </select>
       </div>
-      <button class="btn btn-primary" id="btnAdd" onclick="window.openAddModal()">+ Tambah Pekerjaan</button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-ghost" id="btnImport" onclick="document.getElementById('excelFileInput').click()">Import dari Excel</button>
+        <button class="btn btn-primary" id="btnAdd" onclick="window.openAddModal()">+ Tambah Pekerjaan</button>
+      </div>
+      <input type="file" id="excelFileInput" accept=".xlsx,.xls" style="display:none;" onchange="window.handleExcelImport(event)">
     </div>
 
     <div class="tableWrap">
@@ -476,6 +480,7 @@
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
@@ -483,19 +488,19 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc,
-  deleteDoc, onSnapshot, serverTimestamp, query, orderBy
+  deleteDoc, onSnapshot, serverTimestamp, query, orderBy, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 // =====================================================================
 // GANTI dengan config Firebase project BARU (terpisah dari EHM)
 // =====================================================================
 const firebaseConfig = {
-  apiKey: "AIzaSyCbln16eL94rZfH6JwrOeDJaJztU4exnWU",
-  authDomain: "pengadaan-1e8f8.firebaseapp.com",
-  projectId: "pengadaan-1e8f8",
-  storageBucket: "pengadaan-1e8f8.firebasestorage.app",
-  messagingSenderId: "852562317203",
-  appId: "1:852562317203:web:f6648d70fc966d84d36266"
+  apiKey: "GANTI_API_KEY",
+  authDomain: "GANTI.firebaseapp.com",
+  projectId: "GANTI_PROJECT_ID",
+  storageBucket: "GANTI.appspot.com",
+  messagingSenderId: "GANTI",
+  appId: "GANTI"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -641,6 +646,7 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById("whoName").textContent = currentName;
     document.getElementById("whoRole").textContent = currentRole;
     document.getElementById("btnAdd").style.display = currentRole === "planner" ? "inline-flex" : "none";
+    document.getElementById("btnImport").style.display = currentRole === "planner" ? "inline-flex" : "none";
     document.getElementById("summaryRow").style.display = currentRole === "manager" ? "flex" : "none";
 
     listenItems();
@@ -983,6 +989,152 @@ window.deleteItem = async function(){
     document.getElementById("modalErr").textContent = "Gagal menghapus.";
     console.error(e);
   }
+};
+
+// ---------------------------------------------------------------------
+// IMPORT DARI EXCEL — mengikuti struktur sheet "New_Dashboard_Monitoring
+// Planner": data mulai baris ke-6, kolom B..U (12 kolom H..S = sub-tahap).
+// ---------------------------------------------------------------------
+const KATEGORI_KNOWN = ["Maintenance","OYSP","Take Over","Tools","Training"];
+const CONTRACT_TYPE_MAP = {
+  "all in": "All in", "material": "Material", "jasa": "Jasa",
+  "unit rate": "Unit Rate", "empowerment": "Empowerment",
+  "pphk": "PPHK", "tools": "Tools"
+};
+
+function normalizeKategori(raw){
+  if(!raw) return "";
+  const trimmed = String(raw).trim();
+  const match = KATEGORI_KNOWN.find(k => k.toLowerCase() === trimmed.toLowerCase());
+  return match || trimmed; // kalau tidak dikenal, simpan apa adanya (akan tampil sbg "Lainnya" di form)
+}
+
+function normalizeContractType(raw){
+  if(!raw) return "";
+  const trimmed = String(raw).trim();
+  const mapped = CONTRACT_TYPE_MAP[trimmed.toLowerCase()];
+  return mapped || trimmed;
+}
+
+// Coba parse tanggal dari Date object atau string "dd.mm.yyyy" / "dd-mm-yyyy".
+// Kalau gagal (teks deskriptif seperti "Amandemen kontrak s.d. 30-Sep-2026"),
+// kembalikan null dan simpan teks aslinya di catatan — bukan dipaksa jadi tanggal.
+function safeParseDate(raw){
+  if(!raw) return { iso: "", rawText: "" };
+  if(raw instanceof Date && !isNaN(raw)){
+    const y = raw.getFullYear(), m = String(raw.getMonth()+1).padStart(2,"0"), d = String(raw.getDate()).padStart(2,"0");
+    return { iso: `${y}-${m}-${d}`, rawText: "" };
+  }
+  const str = String(raw).trim();
+  const m1 = str.match(/^(\d{1,2})[.\-\/](\d{1,2})[.\-\/](\d{4})$/);
+  if(m1){
+    const [_, dd, mm, yyyy] = m1;
+    return { iso: `${yyyy}-${mm.padStart(2,"0")}-${dd.padStart(2,"0")}`, rawText: "" };
+  }
+  // tidak dikenali sebagai tanggal murni — simpan sebagai teks
+  return { iso: "", rawText: str };
+}
+
+function emptyStages(){
+  const obj = {};
+  STAGE_TEMPLATE.forEach(s => obj[s.key] = false);
+  return obj;
+}
+
+window.handleExcelImport = function(event){
+  const file = event.target.files[0];
+  if(!file) return;
+
+  const proceed = confirm(
+    "Import akan MENAMBAH pekerjaan baru dari Excel ke database.\n" +
+    "Data yang sudah ada di web TIDAK akan ditimpa atau dihapus.\n\n" +
+    "Lanjutkan?"
+  );
+  if(!proceed){ event.target.value = ""; return; }
+
+  const reader = new FileReader();
+  reader.onload = async function(e){
+    try{
+      const data = new Uint8Array(e.target.result);
+      const wb = XLSX.read(data, { type: "array", cellDates: true });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true });
+
+      // Data dimulai dari baris ke-6 Excel = index 5 (0-based) di array ini.
+      const dataRows = rows.slice(5);
+
+      const itemsToImport = [];
+      let skipped = 0;
+
+      dataRows.forEach(row => {
+        const nama = row[1] ? String(row[1]).trim() : "";
+        if(!nama){ skipped++; return; }
+
+        const kategori = normalizeKategori(row[3]);
+        const contractType = normalizeContractType(row[4]);
+        const pic = row[2] ? String(row[2]).trim() : "";
+        const progressNote = row[6] ? String(row[6]).trim() : "";
+        const closeNote = row[20] ? String(row[20]).trim() : "";
+
+        const effParsed = safeParseDate(row[5]);
+        let keterangan = closeNote;
+        if(effParsed.rawText){
+          keterangan = keterangan
+            ? `${keterangan} | Effective Date asli: ${effParsed.rawText}`
+            : `Effective Date asli (tidak terbaca sbg tanggal): ${effParsed.rawText}`;
+        }
+
+        const stages = emptyStages();
+        STAGE_TEMPLATE.forEach((s, idx) => {
+          const cell = row[7 + idx]; // kolom H..S mulai index 7
+          stages[s.key] = !!(cell !== null && cell !== undefined && cell !== "" && cell !== 0);
+        });
+
+        itemsToImport.push({
+          namaPekerjaan: nama,
+          kategori,
+          contractType,
+          pic,
+          targetSelesai: "",
+          effectiveDate: effParsed.iso,
+          sumberKebutuhan: "Migrasi dari Excel Monitoring Planner",
+          progressNote,
+          keterangan,
+          stages,
+          createdAt: serverTimestamp(),
+          createdBy: currentName,
+          updatedAt: serverTimestamp()
+        });
+      });
+
+      if(itemsToImport.length === 0){
+        alert("Tidak ada baris valid ditemukan untuk diimpor. Periksa apakah file sesuai template.");
+        event.target.value = "";
+        return;
+      }
+
+      // Firestore batch max 500 operasi — split kalau lebih dari itu.
+      const BATCH_SIZE = 450;
+      let imported = 0;
+      for(let i = 0; i < itemsToImport.length; i += BATCH_SIZE){
+        const batch = writeBatch(db);
+        const chunk = itemsToImport.slice(i, i + BATCH_SIZE);
+        chunk.forEach(item => {
+          const ref = doc(collection(db, "procurement_items"));
+          batch.set(ref, item);
+        });
+        await batch.commit();
+        imported += chunk.length;
+      }
+
+      alert(`Import selesai.\nBerhasil: ${imported} pekerjaan.\nDilewati (baris kosong): ${skipped}.`);
+    }catch(err){
+      console.error(err);
+      alert("Gagal membaca atau mengimpor file. Pastikan formatnya sesuai template asli (kolom B–U, data mulai baris 6).");
+    }
+    event.target.value = "";
+  };
+  reader.readAsArrayBuffer(file);
 };
 </script>
 </body>
