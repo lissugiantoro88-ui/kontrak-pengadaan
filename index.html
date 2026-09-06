@@ -213,6 +213,12 @@
   tbody tr.rowOverdue{box-shadow:inset 3px 0 0 var(--red);}
   tbody tr:hover{background:#FAFBFC;}
   .jobname{font-weight:500;}
+  .jobname .recentBadge{
+    font-size:10px;font-family:'IBM Plex Mono',monospace;font-weight:600;
+    color:var(--accent);background:var(--accent-soft);
+    padding:1px 7px;border-radius:8px;margin-left:8px;vertical-align:middle;
+    text-transform:uppercase;letter-spacing:.02em;
+  }
   .jobsrc{color:var(--ink-soft);font-size:12px;margin-top:2px;}
 
   /* progress bar — signature element: weighted stage bar (3 zone proportions) */
@@ -525,6 +531,7 @@
         </select>
       </div>
       <div style="display:flex;gap:8px;">
+        <button class="btn btn-ghost" id="btnExportPdf" onclick="window.exportPdfReport()">Export PDF</button>
         <button class="btn btn-ghost" id="btnImport" onclick="document.getElementById('excelFileInput').click()">Import dari Excel</button>
         <button class="btn btn-primary" id="btnAdd" onclick="window.openAddModal()">+ Tambah Pekerjaan</button>
       </div>
@@ -966,6 +973,7 @@ onAuthStateChanged(auth, async (user) => {
     const canWrite = currentRole === "planner" || currentRole === "admin";
     document.getElementById("btnAdd").style.display = canWrite ? "inline-flex" : "none";
     document.getElementById("btnImport").style.display = canWrite ? "inline-flex" : "none";
+    document.getElementById("btnExportPdf").style.display = (currentRole === "manager" || currentRole === "admin") ? "inline-flex" : "none";
     document.getElementById("tabUsers").style.display = currentRole === "admin" ? "inline-block" : "none";
     document.getElementById("viewTabsBar").style.display = currentRole === "admin" ? "flex" : "none";
 
@@ -985,11 +993,23 @@ onAuthStateChanged(auth, async (user) => {
 // ---------------------------------------------------------------------
 // DATA LISTENER
 // ---------------------------------------------------------------------
+function tsMillis(ts){
+  if(!ts) return 0;
+  if(typeof ts.seconds === "number") return ts.seconds * 1000 + (ts.nanoseconds || 0) / 1e6;
+  if(typeof ts.toMillis === "function") return ts.toMillis();
+  return 0;
+}
+
 function listenItems(){
-  const q = query(collection(db, "procurement_items"), orderBy("createdAt", "desc"));
-  unsubItems = onSnapshot(q, (snap) => {
+  // Tidak pakai orderBy di query Firestore: kalau ada dokumen lama yang
+  // belum punya field updatedAt/createdAt, Firestore akan MEMBUANGNYA dari
+  // hasil (bukan menaruh di akhir). Jadi ambil semua, urutkan di JS.
+  unsubItems = onSnapshot(collection(db, "procurement_items"), (snap) => {
     allItems = [];
     snap.forEach(d => allItems.push({ id: d.id, ...d.data() }));
+    // Terbaru di-update naik ke atas; yang tidak pernah di-update (tanpa
+    // field updatedAt) dianggap timestamp 0 → otomatis tenggelam ke bawah.
+    allItems.sort((a, b) => tsMillis(b.updatedAt) - tsMillis(a.updatedAt));
     populatePlannerFilter();
     renderTable();
     renderStatusOverview();
@@ -1446,6 +1466,192 @@ function renderPlannerBars(){
   }).join("");
 }
 
+// ---------------------------------------------------------------------
+// EXPORT PDF — laporan untuk management. Memakai window.print() (buka
+// jendela cetak, lalu pilih "Save as PDF" di dialog print browser) —
+// tidak perlu library tambahan, konsisten dengan pola PDF export di EHM.
+// Laporan mengikuti FILTER yang sedang aktif di layar (kalau Anda filter
+// dulu by kategori/planner/status, laporan yang keluar juga sudah tersaring).
+// ---------------------------------------------------------------------
+window.exportPdfReport = function(){
+  const { items, filterDescription } = getFilteredItems();
+
+  if(items.length === 0){
+    alert("Tidak ada data untuk diekspor pada filter saat ini.");
+    return;
+  }
+
+  const now = new Date();
+  const generatedAt = now.toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' });
+
+  // --- Ringkasan status (4-legend) ---
+  const counts = { belum:0, progress:0, selesai:0, overdue:0 };
+  items.forEach(i => counts[getItemStatus(i).key]++);
+  const totalCount = items.length;
+  const expiringCount = items.filter(isExpiringSoon).length;
+
+  // --- Breakdown kategori ---
+  const catMap = {};
+  items.forEach(i => {
+    const k = i.kategori || "Lainnya";
+    if(!catMap[k]) catMap[k] = { count:0, sumProgress:0 };
+    catMap[k].count++;
+    catMap[k].sumProgress += getTotalProgress(i);
+  });
+
+  // --- Breakdown planner ---
+  const planMap = {};
+  items.forEach(i => {
+    const p = i.pic || "(Tidak diisi)";
+    if(!planMap[p]) planMap[p] = { count:0, sumProgress:0, overdue:0, done:0 };
+    planMap[p].count++;
+    planMap[p].sumProgress += getTotalProgress(i);
+    if(getItemStatus(i).key === "overdue") planMap[p].overdue++;
+    if(getItemStatus(i).key === "selesai") planMap[p].done++;
+  });
+
+  // Print window adalah dokumen TERPISAH — tidak mewarisi CSS variables app
+  // utama (var(--accent) dkk tidak akan dikenali di sana). Pakai hex langsung.
+  const STATUS_HEX = { belum:"#9CA3AF", progress:"#3C7A5C", selesai:"#2B6CB0", overdue:"#B84A3E" };
+
+  const statusRowsHtml = ["belum","progress","selesai","overdue"].map(key => `
+    <tr>
+      <td><span class="dotLegend" style="background:${STATUS_HEX[key]}"></span>${STATUS_DEF[key].label}</td>
+      <td class="num">${counts[key]}</td>
+      <td class="num">${totalCount ? Math.round((counts[key]/totalCount)*100) : 0}%</td>
+    </tr>
+  `).join("");
+
+  const catRowsHtml = Object.keys(catMap).sort().map(k => {
+    const c = catMap[k];
+    return `<tr><td>${escapeHtml(k)}</td><td class="num">${c.count}</td><td class="num">${Math.round(c.sumProgress/c.count)}%</td></tr>`;
+  }).join("");
+
+  const planRowsHtml = Object.keys(planMap).sort().map(p => {
+    const d = planMap[p];
+    return `<tr><td>${escapeHtml(p)}</td><td class="num">${d.count}</td><td class="num">${d.done}</td><td class="num">${d.overdue}</td><td class="num">${Math.round(d.sumProgress/d.count)}%</td></tr>`;
+  }).join("");
+
+  const detailRowsHtml = items.map((item, idx) => {
+    const status = getItemStatus(item);
+    const total = getTotalProgress(item);
+    const dateInfo = total >= 100 && item.effectiveDate
+      ? `Expiry: ${fmtDate(item.effectiveDate)}`
+      : (item.targetSelesai ? `Target: ${fmtDate(item.targetSelesai)}` : "—");
+    return `
+      <tr>
+        <td class="num">${idx + 1}</td>
+        <td>${escapeHtml(item.namaPekerjaan)}</td>
+        <td>${escapeHtml(item.kategori || "—")}</td>
+        <td>${escapeHtml(item.pic || "—")}</td>
+        <td class="statusText" style="color:${STATUS_HEX[status.key]}">${status.label}</td>
+        <td class="num">${total}%</td>
+        <td>${dateInfo}</td>
+      </tr>
+    `;
+  }).join("");
+
+  const reportHtml = `
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<title>Laporan Monitoring Pengadaan Kontrak</title>
+<style>
+  @page { size: A4 landscape; margin: 15mm; }
+  * { box-sizing: border-box; }
+  body{ font-family: 'Arial', 'Helvetica', sans-serif; color:#1C2530; font-size:11px; margin:0; }
+  .reportHeader{ text-align:center; margin-bottom:18px; border-bottom:2px solid #1C2530; padding-bottom:10px; }
+  .reportHeader .company{ font-size:15px; font-weight:700; letter-spacing:.03em; }
+  .reportHeader .sub{ font-size:11px; color:#5B6472; margin-top:2px; }
+  .reportHeader h1{ font-size:16px; margin:10px 0 4px; }
+  .metaRow{ display:flex; justify-content:space-between; font-size:10px; color:#5B6472; margin-bottom:20px; }
+  h2{ font-size:13px; border-left:4px solid #2B6CB0; padding-left:8px; margin:22px 0 8px; }
+  table{ width:100%; border-collapse:collapse; margin-bottom:6px; }
+  th, td{ border:1px solid #ccc; padding:5px 8px; text-align:left; font-size:10.5px; }
+  th{ background:#F0F0EE; font-weight:700; }
+  td.num, th.num{ text-align:right; font-family:'Courier New',monospace; }
+  .statusText{ font-weight:700; }
+  .dotLegend{ display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
+  .summaryGrid{ display:flex; gap:14px; margin-bottom:10px; }
+  .summaryGrid .box{ flex:1; border:1px solid #ccc; padding:10px; text-align:center; }
+  .summaryGrid .box .n{ font-size:20px; font-weight:700; font-family:'Courier New',monospace; }
+  .summaryGrid .box .l{ font-size:10px; color:#5B6472; margin-top:2px; }
+  table, tr, td, th { page-break-inside: avoid; }
+  thead { display: table-header-group; }
+  .footer-note{ margin-top:24px; font-size:9.5px; color:#8A93A0; }
+</style>
+</head>
+<body>
+  <div class="reportHeader">
+    <div class="company">PT KILANG PERTAMINA BALIKPAPAN</div>
+    <div class="sub">Technical Support — Reliability Engineering</div>
+    <h1>Laporan Monitoring Perencanaan Pengadaan Kontrak</h1>
+  </div>
+
+  <div class="metaRow">
+    <div>Dibuat oleh: <b>${escapeHtml(currentName)}</b> (${currentRole})</div>
+    <div>Filter: <b>${escapeHtml(filterDescription)}</b></div>
+    <div>Tanggal cetak: <b>${generatedAt}</b></div>
+  </div>
+
+  <h2>Ringkasan Status</h2>
+  <div class="summaryGrid">
+    <div class="box"><div class="n">${totalCount}</div><div class="l">TOTAL PEKERJAAN</div></div>
+    <div class="box"><div class="n">${counts.selesai}</div><div class="l">SELESAI</div></div>
+    <div class="box"><div class="n">${counts.progress}</div><div class="l">IN PROGRESS</div></div>
+    <div class="box"><div class="n">${counts.belum}</div><div class="l">BELUM DIMULAI</div></div>
+    <div class="box"><div class="n">${counts.overdue}</div><div class="l">OVERDUE</div></div>
+    <div class="box"><div class="n">${expiringCount}</div><div class="l">KONTRAK MENDEKATI HABIS</div></div>
+  </div>
+  <table>
+    <thead><tr><th>Status</th><th class="num">Jumlah</th><th class="num">Persentase</th></tr></thead>
+    <tbody>${statusRowsHtml}</tbody>
+  </table>
+
+  <h2>Distribusi per Kategori</h2>
+  <table>
+    <thead><tr><th>Kategori</th><th class="num">Jumlah Pekerjaan</th><th class="num">Rata-rata Progress</th></tr></thead>
+    <tbody>${catRowsHtml}</tbody>
+  </table>
+
+  <h2>Kinerja per Planner</h2>
+  <table>
+    <thead><tr><th>Planner</th><th class="num">Total Tugas</th><th class="num">Selesai</th><th class="num">Overdue</th><th class="num">Rata-rata Progress</th></tr></thead>
+    <tbody>${planRowsHtml}</tbody>
+  </table>
+
+  <h2>Rincian Pekerjaan</h2>
+  <table>
+    <thead>
+      <tr>
+        <th class="num">No</th><th>Nama Pekerjaan</th><th>Kategori</th><th>Planner</th>
+        <th>Status</th><th class="num">Progress</th><th>Target / Expiry</th>
+      </tr>
+    </thead>
+    <tbody>${detailRowsHtml}</tbody>
+  </table>
+
+  <div class="footer-note">
+    Dokumen ini dibuat otomatis dari sistem Monitoring Perencanaan Pengadaan Kontrak pada ${generatedAt}.
+    Data mencerminkan kondisi saat laporan dicetak, bukan snapshot historis.
+  </div>
+</body>
+</html>
+  `;
+
+  const printWindow = window.open('', '_blank');
+  if(!printWindow){
+    alert("Browser memblokir pop-up. Izinkan pop-up untuk situs ini agar bisa export PDF.");
+    return;
+  }
+  printWindow.document.open();
+  printWindow.document.write(reportHtml);
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(() => printWindow.print(), 350);
+};
+
 function renderMyPerformance(){
   const myItems = allItems.filter(i => i.pic === currentName);
   const total = myItems.length;
@@ -1484,6 +1690,17 @@ function renderMyPerformance(){
 // ---------------------------------------------------------------------
 // RENDER: TABLE
 // ---------------------------------------------------------------------
+function relativeUpdateBadge(item){
+  const ms = tsMillis(item.updatedAt);
+  if(!ms) return "";
+  const diffMin = Math.floor((Date.now() - ms) / 60000);
+  if(diffMin < 1) return `<span class="recentBadge">Baru saja</span>`;
+  if(diffMin < 60) return `<span class="recentBadge">${diffMin} menit lalu</span>`;
+  const diffHour = Math.floor(diffMin / 60);
+  if(diffHour < 24) return `<span class="recentBadge">${diffHour} jam lalu</span>`;
+  return ""; // lebih dari 24 jam — sudah tenggelam ke bawah, tidak perlu badge
+}
+
 function fmtDate(dateStr){
   return dateStr ? new Date(dateStr).toLocaleDateString('id-ID', {day:'2-digit',month:'short',year:'numeric'}) : "—";
 }
@@ -1506,7 +1723,7 @@ window.onPageSizeChange = function(){
   window.renderTable();
 };
 
-window.renderTable = function(){
+function getFilteredItems(){
   const fKategori = document.getElementById("filterKategori").value;
   const fPlanner = document.getElementById("filterPlanner").value;
   const fSignal = document.getElementById("filterSignal").value;
@@ -1519,6 +1736,20 @@ window.renderTable = function(){
   if(fSignal === "selesai") items = items.filter(i => getItemStatus(i).key === "selesai");
   if(fSignal === "overdue") items = items.filter(i => getItemStatus(i).key === "overdue");
   if(fSignal === "expiring") items = items.filter(isExpiringSoon);
+
+  const filterLabels = [];
+  if(fKategori) filterLabels.push(`Kategori: ${fKategori}`);
+  if(fPlanner) filterLabels.push(`Planner: ${fPlanner}`);
+  if(fSignal){
+    const map = { belum:"Belum Dimulai", progress:"In Progress", selesai:"Selesai", overdue:"Overdue", expiring:"Kontrak Mendekati Habis" };
+    filterLabels.push(`Status: ${map[fSignal] || fSignal}`);
+  }
+
+  return { items, filterDescription: filterLabels.length ? filterLabels.join(" · ") : "Semua Data" };
+}
+
+window.renderTable = function(){
+  const { items } = getFilteredItems();
 
   const tbody = document.getElementById("tableBody");
   const emptyState = document.getElementById("emptyState");
@@ -1575,7 +1806,7 @@ window.renderTable = function(){
     return `
       <tr class="${overdue ? 'rowOverdue' : ''}">
         <td>
-          <div class="jobname">${escapeHtml(item.namaPekerjaan)}</div>
+          <div class="jobname">${escapeHtml(item.namaPekerjaan)}${relativeUpdateBadge(item)}</div>
           ${item.progressNote ? `<div class="progNote">${escapeHtml(item.progressNote)}</div>` : ""}
         </td>
         <td><span class="pill ${pillClass}">${escapeHtml(item.kategori || "—")}</span></td>
