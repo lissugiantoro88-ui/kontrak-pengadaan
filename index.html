@@ -1,0 +1,989 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Monitoring Perencanaan Pengadaan Kontrak</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F7F7F5;
+    --panel:#FFFFFF;
+    --ink:#1C2530;
+    --ink-soft:#5B6472;
+    --line:#DCDDD8;
+    --accent:#2B6CB0;
+    --accent-soft:#E8F0F9;
+    --amber:#C77D2E;
+    --amber-soft:#FBF0E3;
+    --green:#3C7A5C;
+    --green-soft:#E9F3EE;
+    --red:#B84A3E;
+    --red-soft:#FBEAE8;
+    --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'IBM Plex Sans',sans-serif;
+    font-size:14px;
+  }
+  .mono{font-family:'IBM Plex Mono',monospace;}
+  h1,h2,h3{font-family:'IBM Plex Sans',sans-serif;font-weight:600;margin:0;}
+
+  /* ===== LOGIN ===== */
+  #loginScreen{
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .loginBox{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:36px 32px;
+    width:320px;
+    box-shadow:0 1px 3px rgba(28,37,48,0.06);
+  }
+  .loginBox .eyebrow{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    letter-spacing:0.08em;
+    color:var(--accent);
+    text-transform:uppercase;
+    margin-bottom:6px;
+  }
+  .loginBox h1{font-size:19px;margin-bottom:22px;line-height:1.3;}
+  .field{margin-bottom:14px;}
+  .field label{display:block;font-size:12px;color:var(--ink-soft);margin-bottom:5px;}
+  .field input, .field select, .field textarea{
+    width:100%;
+    padding:9px 10px;
+    border:1px solid var(--line);
+    border-radius:6px;
+    font-family:inherit;
+    font-size:14px;
+    background:#fff;
+    color:var(--ink);
+  }
+  .field input:focus, .field select:focus, .field textarea:focus{
+    outline:none;
+    border-color:var(--accent);
+    box-shadow:0 0 0 3px var(--accent-soft);
+  }
+  .btn{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:6px;
+    padding:9px 16px;
+    border-radius:6px;
+    border:1px solid transparent;
+    font-family:inherit;
+    font-size:13.5px;
+    font-weight:500;
+    cursor:pointer;
+    transition:background .15s;
+  }
+  .btn-primary{background:var(--accent);color:#fff;}
+  .btn-primary:hover{background:#245a94;}
+  .btn-primary:focus-visible, .btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  .btn-ghost{background:transparent;color:var(--ink-soft);border-color:var(--line);}
+  .btn-ghost:hover{background:#F0F0EE;}
+  .btn-block{width:100%;}
+  .errMsg{color:var(--red);font-size:12.5px;margin-top:10px;min-height:16px;}
+
+  /* ===== APP SHELL ===== */
+  #appScreen{display:none;min-height:100vh;}
+  header.topbar{
+    background:var(--ink);
+    color:#fff;
+    padding:14px 24px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+  }
+  header.topbar .brand{display:flex;align-items:center;gap:10px;}
+  header.topbar .brand .dot{
+    width:9px;height:9px;border-radius:50%;background:var(--amber);
+  }
+  header.topbar h1{font-size:15px;color:#fff;}
+  header.topbar .sub{font-family:'IBM Plex Mono',monospace;font-size:11px;color:#9FADBF;margin-top:2px;}
+  header.topbar .who{font-size:12.5px;color:#C7CFDA;display:flex;align-items:center;gap:12px;}
+  header.topbar .who .role-badge{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:10.5px;
+    text-transform:uppercase;
+    letter-spacing:.06em;
+    background:rgba(255,255,255,0.1);
+    padding:3px 8px;
+    border-radius:4px;
+  }
+
+  main{padding:22px 24px 60px;max-width:1180px;margin:0 auto;}
+
+  .toolbar{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    margin-bottom:16px;
+    flex-wrap:wrap;
+    gap:10px;
+  }
+  .filters{display:flex;gap:8px;flex-wrap:wrap;}
+  .filters select{
+    padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:#fff;font-size:13px;font-family:inherit;
+  }
+
+  /* summary cards (manager view) */
+  .summaryRow{display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap;}
+  .sumCard{
+    flex:1;min-width:120px;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:14px 16px;
+  }
+  .sumCard .num{font-family:'IBM Plex Mono',monospace;font-size:24px;font-weight:600;}
+  .sumCard .lbl{font-size:11.5px;color:var(--ink-soft);margin-top:2px;}
+  .sumCard.overdue .num{color:var(--red);}
+
+  /* table */
+  .tableWrap{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    overflow:hidden;
+  }
+  table{width:100%;border-collapse:collapse;}
+  thead th{
+    text-align:left;
+    font-size:11px;
+    letter-spacing:.04em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+    padding:10px 14px;
+    border-bottom:1px solid var(--line);
+    background:#FAFAF8;
+    white-space:nowrap;
+  }
+  tbody td{
+    padding:11px 14px;
+    border-bottom:1px solid var(--line);
+    vertical-align:middle;
+    font-size:13.5px;
+  }
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr.rowOverdue{box-shadow:inset 3px 0 0 var(--red);}
+  tbody tr:hover{background:#FAFBFC;}
+  .jobname{font-weight:500;}
+  .jobsrc{color:var(--ink-soft);font-size:12px;margin-top:2px;}
+
+  /* progress bar — signature element: weighted stage bar (3 zone proportions) */
+  .progWrap{display:flex;align-items:center;gap:9px;min-width:170px;}
+  .progTrack{
+    position:relative;flex:1;height:8px;border-radius:4px;
+    background:#E4E5E1;overflow:hidden;
+  }
+  .progTrack .zoneMarks{position:absolute;inset:0;display:flex;}
+  .progTrack .zoneMarks span{border-right:1px solid rgba(255,255,255,0.6);}
+  .progFill{
+    position:absolute;top:0;left:0;height:100%;
+    background:var(--accent);border-radius:4px;
+    transition:width .2s;
+  }
+  .progFill.done{background:var(--green);}
+  .progPct{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;white-space:nowrap;min-width:32px;text-align:right;}
+  .progNote{color:var(--ink-soft);font-size:11.5px;margin-top:2px;}
+
+  .pill{
+    display:inline-block;
+    padding:3px 9px;
+    border-radius:20px;
+    font-size:11.5px;
+    font-weight:500;
+    white-space:nowrap;
+  }
+  .pill-maintenance{background:var(--accent-soft);color:var(--accent);}
+  .pill-oysp{background:var(--amber-soft);color:var(--amber);}
+  .pill-takeover{background:#EFE9F7;color:#6B4FA0;}
+  .pill-tools{background:#EDF1E4;color:#5C7A32;}
+  .pill-training{background:#FCE9F1;color:#A5406B;}
+  .pill-lainnya{background:#EFEFEC;color:var(--ink-soft);}
+
+  .badge-closed{
+    display:inline-block;font-size:10.5px;font-family:'IBM Plex Mono',monospace;
+    padding:2px 7px;border-radius:4px;background:var(--green-soft);color:var(--green);
+    text-transform:uppercase;letter-spacing:.03em;
+  }
+  .badge-expiring{
+    display:inline-block;font-size:10.5px;font-family:'IBM Plex Mono',monospace;
+    padding:2px 7px;border-radius:4px;background:var(--amber-soft);color:var(--amber);
+    text-transform:uppercase;letter-spacing:.03em;
+  }
+
+  .dateCell{font-family:'IBM Plex Mono',monospace;font-size:12.5px;}
+  .dateCell.overdue{color:var(--red);font-weight:600;}
+  .dateCell .lbl{display:block;font-family:'IBM Plex Sans',sans-serif;font-size:10px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.03em;margin-bottom:1px;}
+
+  /* checklist sub-tahap (dalam modal) */
+  .stageGroup{margin-bottom:14px;}
+  .stageGroup .stageGroupTitle{
+    font-size:11px;text-transform:uppercase;letter-spacing:.05em;
+    color:var(--ink-soft);margin-bottom:6px;font-weight:600;
+  }
+  .stageRow{
+    display:flex;align-items:center;gap:9px;padding:6px 0;
+    border-bottom:1px solid #F0F0EE;
+  }
+  .stageRow:last-child{border-bottom:none;}
+  .stageRow input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent);cursor:pointer;}
+  .stageRow label{flex:1;font-size:13px;cursor:pointer;}
+  .stageRow .weight{
+    font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);
+    background:#F0F0EE;padding:2px 6px;border-radius:4px;
+  }
+  .progressSummary{
+    display:flex;align-items:center;justify-content:space-between;
+    background:var(--accent-soft);border-radius:8px;padding:10px 14px;margin-bottom:16px;
+  }
+  .progressSummary .pctBig{font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:700;color:var(--accent);}
+  .progressSummary .pctBig.done{color:var(--green);}
+  .progressSummary .pctLbl{font-size:11.5px;color:var(--ink-soft);}
+
+  .rowActions{display:flex;gap:6px;}
+  .iconbtn{
+    border:1px solid var(--line);background:#fff;border-radius:5px;
+    padding:5px 8px;font-size:12px;cursor:pointer;color:var(--ink-soft);
+  }
+  .iconbtn:hover{background:#F0F0EE;}
+
+  .emptyState{
+    text-align:center;padding:50px 20px;color:var(--ink-soft);
+  }
+  .emptyState .big{font-size:28px;margin-bottom:8px;}
+
+  /* modal */
+  .modalOverlay{
+    display:none;position:fixed;inset:0;background:rgba(28,37,48,0.45);
+    align-items:center;justify-content:center;z-index:50;padding:20px;
+  }
+  .modalOverlay.show{display:flex;}
+  .modalBox{
+    background:#fff;border-radius:var(--radius);width:480px;max-width:100%;
+    max-height:90vh;overflow-y:auto;padding:24px;
+  }
+  .modalBox h2{font-size:16px;margin-bottom:18px;}
+  .modalRow2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .modalFooter{display:flex;justify-content:flex-end;gap:8px;margin-top:18px;}
+
+  .hint{font-size:11.5px;color:var(--ink-soft);margin-top:4px;}
+
+  @media (max-width:720px){
+    main{padding:16px;}
+    .modalRow2{grid-template-columns:1fr;}
+    header.topbar{padding:12px 16px;}
+    .tableWrap{overflow-x:auto;}
+    table{min-width:760px;}
+  }
+</style>
+</head>
+<body>
+
+<!-- ===================== LOGIN ===================== -->
+<div id="loginScreen">
+  <div class="loginBox">
+    <div class="eyebrow">Technical Support · PT KPB</div>
+    <h1>Monitoring Perencanaan<br>Pengadaan Kontrak</h1>
+    <div class="field">
+      <label for="loginEmail">Email</label>
+      <input type="email" id="loginEmail" autocomplete="username">
+    </div>
+    <div class="field">
+      <label for="loginPass">Password</label>
+      <input type="password" id="loginPass" autocomplete="current-password">
+    </div>
+    <button class="btn btn-primary btn-block" onclick="window.doLogin()">Masuk</button>
+    <div class="errMsg" id="loginErr"></div>
+  </div>
+</div>
+
+<!-- ===================== APP ===================== -->
+<div id="appScreen">
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <div>
+        <h1>Monitoring Perencanaan Pengadaan Kontrak</h1>
+        <div class="sub">TECHNICAL SUPPORT — PT KPB</div>
+      </div>
+    </div>
+    <div class="who">
+      <span id="whoName">—</span>
+      <span class="role-badge" id="whoRole">—</span>
+      <button class="btn btn-ghost" style="color:#fff;border-color:rgba(255,255,255,0.25)" onclick="window.doLogout()">Keluar</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- Manager summary cards -->
+    <div class="summaryRow" id="summaryRow" style="display:none;"></div>
+
+    <div class="toolbar">
+      <div class="filters">
+        <select id="filterKategori" onchange="window.renderTable()">
+          <option value="">Semua Kategori</option>
+          <option>Maintenance</option>
+          <option>OYSP</option>
+          <option>Take Over</option>
+          <option>Tools</option>
+          <option>Training</option>
+          <option>Lainnya</option>
+        </select>
+        <select id="filterPlanner" onchange="window.renderTable()">
+          <option value="">Semua Planner</option>
+        </select>
+        <select id="filterSignal" onchange="window.renderTable()">
+          <option value="">Semua</option>
+          <option value="overdue">Progress Terlambat</option>
+          <option value="expiring">Kontrak Mendekati Habis</option>
+          <option value="done">Sudah Selesai (100%)</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" id="btnAdd" onclick="window.openAddModal()">+ Tambah Pekerjaan</button>
+    </div>
+
+    <div class="tableWrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Pekerjaan</th>
+            <th>Kategori</th>
+            <th>Planner</th>
+            <th>Progres (Total)</th>
+            <th>Target / Expiry</th>
+            <th style="width:70px;"></th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+      <div class="emptyState" id="emptyState" style="display:none;">
+        <div class="big">—</div>
+        Belum ada pekerjaan pengadaan yang tercatat.
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ===================== MODAL: TAMBAH / EDIT ===================== -->
+<div class="modalOverlay" id="itemModal">
+  <div class="modalBox">
+    <h2 id="modalTitle">Tambah Pekerjaan</h2>
+    <input type="hidden" id="itemId">
+
+    <div class="field">
+      <label>Nama Pekerjaan</label>
+      <input type="text" id="fNama" placeholder="mis. Pengadaan Jasa Inspeksi Bejana Tekan">
+    </div>
+
+    <div class="modalRow2">
+      <div class="field">
+        <label>Kategori</label>
+        <select id="fKategori" onchange="window.onKategoriChange()">
+          <option>Maintenance</option>
+          <option>OYSP</option>
+          <option>Take Over</option>
+          <option>Tools</option>
+          <option>Training</option>
+          <option>Lainnya</option>
+        </select>
+      </div>
+      <div class="field" id="kategoriLainnyaWrap" style="display:none;">
+        <label>Kategori (sebutkan)</label>
+        <input type="text" id="fKategoriLainnya">
+      </div>
+      <div class="field" id="contractTypeWrap">
+        <label>Jenis Kontrak</label>
+        <select id="fContractType" onchange="window.onContractTypeChange()">
+          <option>All in</option>
+          <option>Material</option>
+          <option>Jasa</option>
+          <option>Unit Rate</option>
+          <option>Empowerment</option>
+          <option>PPHK</option>
+          <option>Tools</option>
+          <option>Lainnya</option>
+        </select>
+      </div>
+    </div>
+    <div class="field" id="contractTypeLainnyaWrap" style="display:none;">
+      <label>Jenis Kontrak (sebutkan)</label>
+      <input type="text" id="fContractTypeLainnya">
+    </div>
+
+    <div class="modalRow2">
+      <div class="field">
+        <label>PIC (Planner)</label>
+        <input type="text" id="fPic" placeholder="Nama planner">
+      </div>
+      <div class="field">
+        <label>Target Selesai <span class="hint" style="display:inline;">(radar keterlambatan progress)</span></label>
+        <input type="date" id="fTarget">
+        <div class="hint" id="targetEditHint"></div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Effective Date / Tanggal Habis Kontrak <span class="hint" style="display:inline;">(khusus kontrak berjalan — radar perpanjangan)</span></label>
+      <input type="date" id="fEffective">
+    </div>
+
+    <div class="field">
+      <label>Sumber Kebutuhan</label>
+      <input type="text" id="fSumber" placeholder="mis. Program kerja tahunan, Issue Register #123, permintaan operasi, dll">
+    </div>
+
+    <!-- Checklist sub-tahap berbobot -->
+    <div class="progressSummary">
+      <div>
+        <div class="pctLbl">TOTAL PROGRESS</div>
+        <div class="pctBig" id="pctBigDisplay">0%</div>
+      </div>
+    </div>
+    <div id="stageChecklist"></div>
+
+    <div class="field" style="margin-top:14px;">
+      <label>Catatan Progress <span class="hint" style="display:inline;">(status terkini dalam kalimat singkat)</span></label>
+      <input type="text" id="fProgressNote" placeholder="mis. Pembuatan Lingkup dan OE / Waiting Delivery / Close PO">
+    </div>
+
+    <div class="field">
+      <label>Catatan Akhir / Keterangan</label>
+      <input type="text" id="fKet" placeholder="mis. [Closed], User Purchase, Repeat Order, dll">
+    </div>
+
+    <div class="errMsg" id="modalErr"></div>
+
+    <div class="modalFooter">
+      <button class="btn btn-ghost" id="btnDelete" style="margin-right:auto;color:var(--red);border-color:var(--red-soft);display:none;" onclick="window.deleteItem()">Hapus</button>
+      <button class="btn btn-ghost" onclick="window.closeModal()">Batal</button>
+      <button class="btn btn-primary" onclick="window.saveItem()">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {
+  getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {
+  getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc,
+  deleteDoc, onSnapshot, serverTimestamp, query, orderBy
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// =====================================================================
+// GANTI dengan config Firebase project BARU (terpisah dari EHM)
+// =====================================================================
+const firebaseConfig = {
+  apiKey: "AIzaSyCbln16eL94rZfH6JwrOeDJaJztU4exnWU",
+  authDomain: "pengadaan-1e8f8.firebaseapp.com",
+  projectId: "pengadaan-1e8f8",
+  storageBucket: "pengadaan-1e8f8.firebasestorage.app",
+  messagingSenderId: "852562317203",
+  appId: "1:852562317203:web:f6648d70fc966d84d36266"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+// ---------------------------------------------------------------------
+// KONSTANTA — template 12 sub-tahap berbobot (baku untuk semua kategori)
+// Total bobot = 100. Ubah di sini kalau template berubah di kemudian hari.
+// ---------------------------------------------------------------------
+const STAGE_TEMPLATE = [
+  { key:"searching", label:"Searching", weight:7, group:"Vendor Section" },
+  { key:"quotation", label:"Quotation", weight:7, group:"Vendor Section" },
+  { key:"lingkupKAK", label:"Pembuatan Lingkup (KAK)", weight:10, group:"Penyiapan Dokumen Tender" },
+  { key:"oe", label:"Pembuatan Owner Estimate (OE)", weight:15, group:"Penyiapan Dokumen Tender" },
+  { key:"tkdn", label:"Proses TKDN", weight:12, group:"Penyiapan Dokumen Tender" },
+  { key:"izinMetode", label:"Pengajuan Izin Metode Pemilihan, Pelaksana & Anggaran", weight:11, group:"Penyiapan Dokumen Tender" },
+  { key:"berkasProcurement", label:"Pengiriman Berkas ke Procurement", weight:5, group:"Penyiapan Dokumen Tender" },
+  { key:"preBid", label:"Pre-Bid Meeting", weight:8, group:"Proses Tender" },
+  { key:"evaluasiNegosiasi", label:"Pembukaan Penawaran, Evaluasi & Negosiasi", weight:10, group:"Proses Tender" },
+  { key:"lhp", label:"Laporan Hasil Pengadaan (LHP)", weight:5, group:"Proses Tender" },
+  { key:"penetapanPemenang", label:"Penetapan Pemenang Pekerjaan", weight:5, group:"Proses Tender" },
+  { key:"kontrakPO", label:"Pembuatan Kontrak / Approval PO", weight:5, group:"Proses Tender" }
+];
+const STAGE_GROUPS = [...new Set(STAGE_TEMPLATE.map(s => s.group))];
+
+const EXPIRING_SOON_DAYS = 60; // ambang "mendekati habis kontrak" — bisa disesuaikan
+
+const KATEGORI_PILL_CLASS = {
+  "Maintenance": "pill-maintenance",
+  "OYSP": "pill-oysp",
+  "Take Over": "pill-takeover",
+  "Tools": "pill-tools",
+  "Training": "pill-training"
+};
+
+let currentUser = null;
+let currentRole = null; // "planner" | "manager"
+let currentName = "";
+let allItems = [];
+let unsubItems = null;
+
+// ---------------------------------------------------------------------
+// Show/hide field "Lainnya" untuk kategori & jenis kontrak
+// ---------------------------------------------------------------------
+window.onKategoriChange = function(){
+  const v = document.getElementById("fKategori").value;
+  document.getElementById("kategoriLainnyaWrap").style.display = v === "Lainnya" ? "block" : "none";
+};
+window.onContractTypeChange = function(){
+  const v = document.getElementById("fContractType").value;
+  document.getElementById("contractTypeLainnyaWrap").style.display = v === "Lainnya" ? "block" : "none";
+};
+
+// ---------------------------------------------------------------------
+// Render checklist sub-tahap di dalam modal
+// ---------------------------------------------------------------------
+function renderStageChecklist(savedStages){
+  const container = document.getElementById("stageChecklist");
+  const stages = savedStages || {};
+  let html = "";
+  STAGE_GROUPS.forEach(group => {
+    html += `<div class="stageGroup"><div class="stageGroupTitle">${group}</div>`;
+    STAGE_TEMPLATE.filter(s => s.group === group).forEach(s => {
+      const checked = stages[s.key] ? "checked" : "";
+      html += `
+        <div class="stageRow">
+          <input type="checkbox" id="stage_${s.key}" data-weight="${s.weight}" ${checked} onchange="window.updateProgressPreview()">
+          <label for="stage_${s.key}">${s.label}</label>
+          <span class="weight">${s.weight} pts</span>
+        </div>`;
+    });
+    html += `</div>`;
+  });
+  container.innerHTML = html;
+  window.updateProgressPreview();
+}
+
+function calcTotalProgress(){
+  let total = 0;
+  STAGE_TEMPLATE.forEach(s => {
+    const el = document.getElementById(`stage_${s.key}`);
+    if(el && el.checked) total += s.weight;
+  });
+  return total;
+}
+
+window.updateProgressPreview = function(){
+  const total = calcTotalProgress();
+  const el = document.getElementById("pctBigDisplay");
+  el.textContent = total + "%";
+  el.classList.toggle("done", total >= 100);
+};
+
+function getStagesFromForm(){
+  const obj = {};
+  STAGE_TEMPLATE.forEach(s => {
+    const el = document.getElementById(`stage_${s.key}`);
+    obj[s.key] = !!(el && el.checked);
+  });
+  return obj;
+}
+
+// ---------------------------------------------------------------------
+// AUTH
+// ---------------------------------------------------------------------
+window.doLogin = async function(){
+  const email = document.getElementById("loginEmail").value.trim();
+  const pass = document.getElementById("loginPass").value;
+  const errEl = document.getElementById("loginErr");
+  errEl.textContent = "";
+  if(!email || !pass){
+    errEl.textContent = "Isi email dan password.";
+    return;
+  }
+  try{
+    await signInWithEmailAndPassword(auth, email, pass);
+  }catch(e){
+    errEl.textContent = "Login gagal. Periksa email/password.";
+  }
+};
+
+window.doLogout = async function(){
+  await signOut(auth);
+};
+
+onAuthStateChanged(auth, async (user) => {
+  if(user){
+    currentUser = user;
+    const uSnap = await getDoc(doc(db, "users", user.uid));
+    if(!uSnap.exists()){
+      document.getElementById("loginErr").textContent =
+        "Akun belum terdaftar di sistem. Hubungi admin.";
+      await signOut(auth);
+      return;
+    }
+    const uData = uSnap.data();
+    currentRole = uData.role || "planner";
+    currentName = uData.nama || user.email;
+
+    document.getElementById("loginScreen").style.display = "none";
+    document.getElementById("appScreen").style.display = "block";
+    document.getElementById("whoName").textContent = currentName;
+    document.getElementById("whoRole").textContent = currentRole;
+    document.getElementById("btnAdd").style.display = currentRole === "planner" ? "inline-flex" : "none";
+    document.getElementById("summaryRow").style.display = currentRole === "manager" ? "flex" : "none";
+
+    listenItems();
+  } else {
+    currentUser = null;
+    currentRole = null;
+    document.getElementById("loginScreen").style.display = "flex";
+    document.getElementById("appScreen").style.display = "none";
+    if(unsubItems) unsubItems();
+  }
+});
+
+// ---------------------------------------------------------------------
+// DATA LISTENER
+// ---------------------------------------------------------------------
+function listenItems(){
+  const q = query(collection(db, "procurement_items"), orderBy("createdAt", "desc"));
+  unsubItems = onSnapshot(q, (snap) => {
+    allItems = [];
+    snap.forEach(d => allItems.push({ id: d.id, ...d.data() }));
+    populatePlannerFilter();
+    renderSummary();
+    renderTable();
+  });
+}
+
+function getTotalProgress(item){
+  let total = 0;
+  STAGE_TEMPLATE.forEach(s => { if(item.stages && item.stages[s.key]) total += s.weight; });
+  return total;
+}
+
+function isProgressOverdue(item){
+  const total = getTotalProgress(item);
+  if(total >= 100) return false;
+  if(!item.targetSelesai) return false;
+  const today = new Date(); today.setHours(0,0,0,0);
+  return new Date(item.targetSelesai) < today;
+}
+
+function daysUntil(dateStr){
+  const today = new Date(); today.setHours(0,0,0,0);
+  const target = new Date(dateStr);
+  return Math.round((target - today) / 86400000);
+}
+
+function isExpiringSoon(item){
+  if(!item.effectiveDate) return false;
+  const d = daysUntil(item.effectiveDate);
+  return d <= EXPIRING_SOON_DAYS; // termasuk yang sudah lewat (d negatif) → dianggap perlu perhatian
+}
+
+function populatePlannerFilter(){
+  const sel = document.getElementById("filterPlanner");
+  const current = sel.value;
+  const planners = [...new Set(allItems.map(i => i.pic).filter(Boolean))].sort();
+  sel.innerHTML = `<option value="">Semua Planner</option>` +
+    planners.map(p => `<option ${p===current?'selected':''}>${p}</option>`).join("");
+}
+
+// ---------------------------------------------------------------------
+// RENDER: SUMMARY (manager)
+// ---------------------------------------------------------------------
+function renderSummary(){
+  if(currentRole !== "manager") return;
+  const el = document.getElementById("summaryRow");
+  const total = allItems.length;
+  const overdueCount = allItems.filter(isProgressOverdue).length;
+  const expiringCount = allItems.filter(isExpiringSoon).length;
+  const doneCount = allItems.filter(i => getTotalProgress(i) >= 100).length;
+
+  el.innerHTML = `
+    <div class="sumCard">
+      <div class="num mono">${total}</div>
+      <div class="lbl">Total Pekerjaan</div>
+    </div>
+    <div class="sumCard">
+      <div class="num mono">${doneCount}</div>
+      <div class="lbl">Selesai (100%)</div>
+    </div>
+    <div class="sumCard overdue">
+      <div class="num mono">${overdueCount}</div>
+      <div class="lbl">Progress Terlambat</div>
+    </div>
+    <div class="sumCard overdue">
+      <div class="num mono">${expiringCount}</div>
+      <div class="lbl">Kontrak Mendekati Habis</div>
+    </div>
+  `;
+}
+
+// ---------------------------------------------------------------------
+// RENDER: TABLE
+// ---------------------------------------------------------------------
+function fmtDate(dateStr){
+  return dateStr ? new Date(dateStr).toLocaleDateString('id-ID', {day:'2-digit',month:'short',year:'numeric'}) : "—";
+}
+
+window.renderTable = function(){
+  const fKategori = document.getElementById("filterKategori").value;
+  const fPlanner = document.getElementById("filterPlanner").value;
+  const fSignal = document.getElementById("filterSignal").value;
+
+  let items = [...allItems];
+  if(fKategori) items = items.filter(i => i.kategori === fKategori);
+  if(fPlanner) items = items.filter(i => i.pic === fPlanner);
+  if(fSignal === "overdue") items = items.filter(isProgressOverdue);
+  if(fSignal === "expiring") items = items.filter(isExpiringSoon);
+  if(fSignal === "done") items = items.filter(i => getTotalProgress(i) >= 100);
+
+  const tbody = document.getElementById("tableBody");
+  const emptyState = document.getElementById("emptyState");
+
+  if(items.length === 0){
+    tbody.innerHTML = "";
+    emptyState.style.display = "block";
+    return;
+  }
+  emptyState.style.display = "none";
+
+  tbody.innerHTML = items.map(item => {
+    const total = getTotalProgress(item);
+    const isDone = total >= 100;
+    const overdue = isProgressOverdue(item);
+    const expiring = isExpiringSoon(item);
+    const pillClass = KATEGORI_PILL_CLASS[item.kategori] || "pill-lainnya";
+
+    // weighted-zone marks di track (proporsi 3 kelompok: 14 / 53 / 33)
+    const zoneW = { "Vendor Section":14, "Penyiapan Dokumen Tender":53, "Proses Tender":33 };
+
+    let dateBlock;
+    if(isDone && item.effectiveDate){
+      dateBlock = `
+        <span class="lbl">Expiry</span>
+        <span class="${expiring ? 'overdue' : ''}">${fmtDate(item.effectiveDate)}</span>
+        ${expiring ? `<div class="badge-expiring" style="margin-top:3px;">Segera Habis</div>` : ""}
+      `;
+    } else if(!isDone && item.targetSelesai){
+      dateBlock = `
+        <span class="lbl">Target</span>
+        <span class="${overdue ? 'overdue' : ''}">${fmtDate(item.targetSelesai)}</span>
+      `;
+    } else {
+      dateBlock = `—`;
+    }
+
+    return `
+      <tr class="${overdue ? 'rowOverdue' : ''}">
+        <td>
+          <div class="jobname">${escapeHtml(item.namaPekerjaan)}</div>
+          ${item.progressNote ? `<div class="progNote">${escapeHtml(item.progressNote)}</div>` : ""}
+        </td>
+        <td><span class="pill ${pillClass}">${escapeHtml(item.kategori || "—")}</span></td>
+        <td>${escapeHtml(item.pic || "—")}</td>
+        <td>
+          <div class="progWrap">
+            <div class="progTrack">
+              <div class="zoneMarks">
+                <span style="width:${zoneW["Vendor Section"]}%"></span>
+                <span style="width:${zoneW["Penyiapan Dokumen Tender"]}%"></span>
+                <span style="width:${zoneW["Proses Tender"]}%"></span>
+              </div>
+              <div class="progFill ${isDone ? 'done' : ''}" style="width:${total}%"></div>
+            </div>
+            <div class="progPct mono">${total}%</div>
+          </div>
+        </td>
+        <td class="dateCell">${dateBlock}</td>
+        <td>
+          <div class="rowActions">
+            <button class="iconbtn" onclick='window.openEditModal(${JSON.stringify(item.id)})'>Buka</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join("");
+};
+
+function escapeHtml(str){
+  if(!str) return "";
+  return str.replace(/[&<>"']/g, m => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[m]));
+}
+
+// ---------------------------------------------------------------------
+// MODAL: TAMBAH / EDIT
+// ---------------------------------------------------------------------
+function resetLainnyaWraps(){
+  document.getElementById("kategoriLainnyaWrap").style.display = "none";
+  document.getElementById("contractTypeLainnyaWrap").style.display = "none";
+  document.getElementById("fKategoriLainnya").value = "";
+  document.getElementById("fContractTypeLainnya").value = "";
+}
+
+window.openAddModal = function(){
+  document.getElementById("modalTitle").textContent = "Tambah Pekerjaan";
+  document.getElementById("itemId").value = "";
+  document.getElementById("fNama").value = "";
+  document.getElementById("fKategori").value = "Maintenance";
+  document.getElementById("fContractType").value = "All in";
+  resetLainnyaWraps();
+  document.getElementById("fPic").value = currentRole === "planner" ? currentName : "";
+  document.getElementById("fTarget").value = "";
+  document.getElementById("fEffective").value = "";
+  document.getElementById("fSumber").value = "";
+  document.getElementById("fProgressNote").value = "";
+  document.getElementById("fKet").value = "";
+  document.getElementById("modalErr").textContent = "";
+  document.getElementById("targetEditHint").textContent = "";
+  document.getElementById("btnDelete").style.display = "none";
+  renderStageChecklist(null);
+  setFieldPermissions(false);
+  document.getElementById("itemModal").classList.add("show");
+};
+
+window.openEditModal = function(id){
+  const item = allItems.find(i => i.id === id);
+  if(!item) return;
+  document.getElementById("modalTitle").textContent = "Detail Pekerjaan";
+  document.getElementById("itemId").value = id;
+  document.getElementById("fNama").value = item.namaPekerjaan || "";
+
+  const kategoriDikenal = ["Maintenance","OYSP","Take Over","Tools","Training"];
+  resetLainnyaWraps();
+  if(kategoriDikenal.includes(item.kategori)){
+    document.getElementById("fKategori").value = item.kategori;
+  } else {
+    document.getElementById("fKategori").value = "Lainnya";
+    document.getElementById("fKategoriLainnya").value = item.kategori || "";
+    document.getElementById("kategoriLainnyaWrap").style.display = "block";
+  }
+  const contractDikenal = ["All in","Material","Jasa","Unit Rate","Empowerment","PPHK","Tools"];
+  if(contractDikenal.includes(item.contractType)){
+    document.getElementById("fContractType").value = item.contractType;
+  } else {
+    document.getElementById("fContractType").value = "Lainnya";
+    document.getElementById("fContractTypeLainnya").value = item.contractType || "";
+    document.getElementById("contractTypeLainnyaWrap").style.display = "block";
+  }
+
+  document.getElementById("fPic").value = item.pic || "";
+  document.getElementById("fTarget").value = item.targetSelesai || "";
+  document.getElementById("fEffective").value = item.effectiveDate || "";
+  document.getElementById("fSumber").value = item.sumberKebutuhan || "";
+  document.getElementById("fProgressNote").value = item.progressNote || "";
+  document.getElementById("fKet").value = item.keterangan || "";
+  document.getElementById("modalErr").textContent = "";
+  renderStageChecklist(item.stages);
+
+  const hint = document.getElementById("targetEditHint");
+  hint.textContent = item.targetLastEditedBy ? `Terakhir diubah oleh ${item.targetLastEditedBy}` : "";
+
+  document.getElementById("btnDelete").style.display = currentRole === "planner" ? "inline-flex" : "none";
+  setFieldPermissions(true);
+  document.getElementById("itemModal").classList.add("show");
+};
+
+// Manager: hanya field targetSelesai yang bisa diedit. Field lain read-only.
+function setFieldPermissions(isEdit){
+  const managerOnly = currentRole === "manager" && isEdit;
+  const fields = ["fNama","fKategori","fKategoriLainnya","fContractType","fContractTypeLainnya",
+                  "fPic","fEffective","fSumber","fProgressNote","fKet"];
+  fields.forEach(id => { document.getElementById(id).disabled = managerOnly; });
+  document.querySelectorAll("#stageChecklist input[type=checkbox]").forEach(cb => { cb.disabled = managerOnly; });
+  document.getElementById("fTarget").disabled = false; // selalu bisa diisi planner & manager
+}
+
+window.closeModal = function(){
+  document.getElementById("itemModal").classList.remove("show");
+};
+
+window.saveItem = async function(){
+  const id = document.getElementById("itemId").value;
+  const errEl = document.getElementById("modalErr");
+  errEl.textContent = "";
+
+  const targetVal = document.getElementById("fTarget").value;
+
+  try{
+    if(currentRole === "manager" && id){
+      // Manager hanya boleh update targetSelesai
+      await updateDoc(doc(db, "procurement_items", id), {
+        targetSelesai: targetVal,
+        targetLastEditedBy: currentName,
+        targetLastEditedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      window.closeModal();
+      return;
+    }
+
+    const nama = document.getElementById("fNama").value.trim();
+    if(!nama){
+      errEl.textContent = "Nama pekerjaan wajib diisi.";
+      return;
+    }
+
+    let kategori = document.getElementById("fKategori").value;
+    if(kategori === "Lainnya") kategori = document.getElementById("fKategoriLainnya").value.trim() || "Lainnya";
+    let contractType = document.getElementById("fContractType").value;
+    if(contractType === "Lainnya") contractType = document.getElementById("fContractTypeLainnya").value.trim() || "Lainnya";
+
+    const payload = {
+      namaPekerjaan: nama,
+      kategori: kategori,
+      contractType: contractType,
+      pic: document.getElementById("fPic").value.trim(),
+      targetSelesai: targetVal,
+      effectiveDate: document.getElementById("fEffective").value,
+      sumberKebutuhan: document.getElementById("fSumber").value.trim(),
+      progressNote: document.getElementById("fProgressNote").value.trim(),
+      keterangan: document.getElementById("fKet").value.trim(),
+      stages: getStagesFromForm(),
+      updatedAt: serverTimestamp()
+    };
+
+    if(id){
+      await updateDoc(doc(db, "procurement_items", id), payload);
+    } else {
+      payload.createdAt = serverTimestamp();
+      payload.createdBy = currentName;
+      await addDoc(collection(db, "procurement_items"), payload);
+    }
+    window.closeModal();
+  }catch(e){
+    errEl.textContent = "Gagal menyimpan. Periksa koneksi atau hak akses.";
+    console.error(e);
+  }
+};
+
+window.deleteItem = async function(){
+  const id = document.getElementById("itemId").value;
+  if(!id) return;
+  if(!confirm("Hapus pekerjaan ini? Tindakan tidak bisa dibatalkan.")) return;
+  try{
+    await deleteDoc(doc(db, "procurement_items", id));
+    window.closeModal();
+  }catch(e){
+    document.getElementById("modalErr").textContent = "Gagal menghapus.";
+    console.error(e);
+  }
+};
+</script>
+</body>
+</html>
