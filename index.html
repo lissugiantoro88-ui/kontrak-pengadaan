@@ -308,6 +308,19 @@
   .stageRow.stageRowDisabled{opacity:0.4;transition:opacity .2s;}
   .stageRow.stageRowDisabled input[type=checkbox],
   .stageRow.stageRowDisabled label{cursor:not-allowed;}
+  .stageDetailPanel{
+    margin:0 0 10px 25px;padding:10px 12px;
+    background:#FAFAF8;border-left:2px solid var(--accent-soft);
+    border-radius:0 6px 6px 0;
+  }
+  .stageDetailField{margin-bottom:8px;}
+  .stageDetailField:last-child{margin-bottom:0;}
+  .stageDetailField label{display:block;font-size:11px;color:var(--ink-soft);margin-bottom:3px;}
+  .stageDetailField input, .stageDetailField textarea{
+    width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:5px;
+    font-family:inherit;font-size:12.5px;background:#fff;box-sizing:border-box;
+  }
+  .stageDetailField textarea{resize:vertical;}
   .progressSummary{
     display:flex;align-items:center;justify-content:space-between;
     background:var(--accent-soft);border-radius:8px;padding:10px 14px;margin-bottom:16px;
@@ -1021,6 +1034,53 @@ const STAGE_TEMPLATE = [
 ];
 const STAGE_GROUPS = [...new Set(STAGE_TEMPLATE.map(s => s.group))];
 
+// ---------------------------------------------------------------------
+// Field detail tambahan per sub-tahap — muncul otomatis di bawah checklist
+// begitu dicentang. Beberapa field TANGGAL saya tambahkan sendiri di luar
+// yang diminta (Izin Metode, Berkas Procurement, Kontrak/PO) karena dari
+// pengalaman, dokumen resmi seperti ini nyaris selalu perlu tanggal
+// sebagai referensi — kalau ternyata tidak perlu, gampang dihapus lagi.
+// ---------------------------------------------------------------------
+const STAGE_DETAIL_FIELDS = {
+  searching: [
+    { key:"vendors", label:"Vendor yang Disourcing", type:"textarea", placeholder:"Satu vendor per baris" }
+  ],
+  quotation: [
+    { key:"vendors", label:"Vendor yang Mengirim Penawaran", type:"textarea", placeholder:"Satu vendor per baris" }
+  ],
+  izinMetode: [
+    { key:"noSurat", label:"Nomor Surat Izin Prinsip", type:"text" },
+    { key:"tanggalSurat", label:"Tanggal Surat", type:"date" },
+    { key:"perihal", label:"Perihal", type:"text" }
+  ],
+  berkasProcurement: [
+    { key:"noBerkas", label:"Nomor Berkas", type:"text" },
+    { key:"tanggalKirim", label:"Tanggal Kirim", type:"date" }
+  ],
+  preBid: [
+    { key:"tanggal", label:"Tanggal Pre-Bid Meeting", type:"date" },
+    { key:"catatan", label:"Catatan", type:"text" }
+  ],
+  evaluasiNegosiasi: [
+    { key:"tanggal", label:"Tanggal Pembukaan Penawaran", type:"date" },
+    { key:"catatan", label:"Catatan", type:"text" }
+  ],
+  lhp: [
+    { key:"nomor", label:"Nomor LHP", type:"text" },
+    { key:"tanggal", label:"Tanggal LHP", type:"date" },
+    { key:"catatan", label:"Catatan", type:"text" }
+  ],
+  penetapanPemenang: [
+    { key:"nomor", label:"Nomor Penetapan", type:"text" },
+    { key:"tanggal", label:"Tanggal Penetapan", type:"date" },
+    { key:"catatan", label:"Catatan", type:"text" }
+  ],
+  kontrakPO: [
+    { key:"nomorPO", label:"Nomor PO", type:"text" },
+    { key:"tanggalPO", label:"Tanggal PO", type:"date" }
+  ]
+};
+
 const EXPIRING_SOON_DAYS = 60; // ambang "mendekati habis kontrak" — bisa disesuaikan
 
 const KATEGORI_PILL_CLASS = {
@@ -1071,9 +1131,10 @@ window.onContractTypeChange = function(){
 // ---------------------------------------------------------------------
 // Render checklist sub-tahap di dalam modal
 // ---------------------------------------------------------------------
-function renderStageChecklist(savedStages){
+function renderStageChecklist(savedStages, savedStageDetails){
   const container = document.getElementById("stageChecklist");
   const stages = savedStages || {};
+  const details = savedStageDetails || {};
   let html = "";
   STAGE_GROUPS.forEach(group => {
     html += `<div class="stageGroup"><div class="stageGroupTitle">${group}</div>`;
@@ -1085,6 +1146,30 @@ function renderStageChecklist(savedStages){
           <label for="stage_${s.key}">${s.label}</label>
           <span class="weight">${s.weight} poin</span>
         </div>`;
+
+      const detailFields = STAGE_DETAIL_FIELDS[s.key];
+      if(detailFields){
+        const detailVals = details[s.key] || {};
+        const showPanel = stages[s.key] ? "block" : "none";
+        html += `<div class="stageDetailPanel" id="stageDetail_${s.key}" style="display:${showPanel};">`;
+        detailFields.forEach(f => {
+          const val = detailVals[f.key] || "";
+          if(f.type === "textarea"){
+            html += `
+              <div class="stageDetailField">
+                <label>${f.label}</label>
+                <textarea id="stageDetail_${s.key}_${f.key}" rows="2" placeholder="${f.placeholder || ""}">${escapeHtml(val)}</textarea>
+              </div>`;
+          } else {
+            html += `
+              <div class="stageDetailField">
+                <label>${f.label}</label>
+                <input type="${f.type}" id="stageDetail_${s.key}_${f.key}" value="${escapeHtml(val)}">
+              </div>`;
+          }
+        });
+        html += `</div>`;
+      }
     });
     html += `</div>`;
   });
@@ -1124,8 +1209,17 @@ function calcTotalProgress(){
   return total;
 }
 
+function toggleAllStageDetailPanels(){
+  Object.keys(STAGE_DETAIL_FIELDS).forEach(key => {
+    const cb = document.getElementById(`stage_${key}`);
+    const panel = document.getElementById(`stageDetail_${key}`);
+    if(cb && panel) panel.style.display = cb.checked ? "block" : "none";
+  });
+}
+
 window.updateProgressPreview = function(){
   applyStageGating();
+  toggleAllStageDetailPanels();
   const total = calcTotalProgress();
   const el = document.getElementById("pctBigDisplay");
   el.textContent = total + "%";
@@ -1139,6 +1233,22 @@ function getStagesFromForm(){
     obj[s.key] = !!(el && el.checked);
   });
   return obj;
+}
+
+function getStageDetailsFromForm(){
+  const result = {};
+  Object.keys(STAGE_DETAIL_FIELDS).forEach(key => {
+    const obj = {};
+    let hasValue = false;
+    STAGE_DETAIL_FIELDS[key].forEach(f => {
+      const el = document.getElementById(`stageDetail_${key}_${f.key}`);
+      const val = el ? el.value.trim() : "";
+      obj[f.key] = val;
+      if(val) hasValue = true;
+    });
+    if(hasValue) result[key] = obj;
+  });
+  return result;
 }
 
 // ---------------------------------------------------------------------
@@ -1577,6 +1687,9 @@ function buildChangeSummary(oldItem, newPayload){
     const oldPct = getTotalProgress(oldItem);
     const newTotal = STAGE_TEMPLATE.reduce((s, st) => s + (newPayload.stages[st.key] ? st.weight : 0), 0);
     if(oldPct !== newTotal) parts.push(`Progress: ${oldPct}% → ${newTotal}%`);
+  }
+  if(JSON.stringify(newPayload.stageDetails || {}) !== JSON.stringify(oldItem.stageDetails || {})){
+    parts.push("Detail sub-tahap diperbarui");
   }
   return parts.length ? parts.join(" · ") : "Tidak ada perubahan terdeteksi";
 }
@@ -2733,7 +2846,7 @@ window.openAddModal = function(){
   document.getElementById("modalErr").textContent = "";
   document.getElementById("targetEditHint").textContent = "";
   document.getElementById("btnDelete").style.display = "none";
-  renderStageChecklist(null);
+  renderStageChecklist(null, null);
   setFieldPermissions(false);
   document.getElementById("itemModal").classList.add("show");
 };
@@ -2770,7 +2883,7 @@ window.openEditModal = function(id){
   document.getElementById("fDasarPengadaan").innerHTML = item.dasarPengadaan || "";
   document.getElementById("fKet").value = item.keterangan || "";
   document.getElementById("modalErr").textContent = "";
-  renderStageChecklist(item.stages);
+  renderStageChecklist(item.stages, item.stageDetails);
 
   const hint = document.getElementById("targetEditHint");
   hint.textContent = item.targetLastEditedBy ? `Terakhir diubah oleh ${item.targetLastEditedBy}` : "";
@@ -2791,6 +2904,7 @@ function setFieldPermissions(isEdit){
                   "fPic","fEffective","fProgressNote","fKet"];
   fields.forEach(id => { document.getElementById(id).disabled = readOnlyAll; });
   document.querySelectorAll("#stageChecklist input[type=checkbox]").forEach(cb => { cb.disabled = readOnlyAll; });
+  document.querySelectorAll(".stageDetailPanel input, .stageDetailPanel textarea").forEach(el => { el.disabled = readOnlyAll; });
   // contenteditable bukan <input>, tidak punya properti "disabled" — dikunci via attribute contenteditable.
   document.getElementById("fDasarPengadaan").contentEditable = readOnlyAll ? "false" : "true";
   // Target tanggal: planner/admin/senior_planner/manager boleh isi — viewer TIDAK sama sekali.
@@ -2851,6 +2965,7 @@ window.saveItem = async function(){
       dasarPengadaan: sanitizeRichHtml(document.getElementById("fDasarPengadaan").innerHTML.trim()),
       keterangan: document.getElementById("fKet").value.trim(),
       stages: newStages,
+      stageDetails: getStageDetailsFromForm(),
       updatedAt: serverTimestamp()
     };
     // progressUpdatedAt HANYA disentuh kalau checklist sub-tahap benar-benar
