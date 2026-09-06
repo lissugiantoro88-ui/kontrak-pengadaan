@@ -446,12 +446,17 @@
     </div>
     <div class="field">
       <label for="loginPass">Password</label>
-      <input type="password" id="loginPass" autocomplete="current-password">
+      <div style="display:flex;gap:6px;">
+        <input type="password" id="loginPass" autocomplete="current-password" style="flex:1;">
+        <button type="button" class="btn btn-ghost" onclick="window.togglePwVisibility('loginPass', this)">Tampilkan</button>
+      </div>
     </div>
     <button class="btn btn-primary btn-block" onclick="window.doLogin()">Masuk</button>
     <div class="errMsg" id="loginErr"></div>
     <div style="text-align:center;margin-top:14px;">
       <a href="#" style="font-size:12.5px;color:var(--accent);text-decoration:none;" onclick="window.toggleRegister(true);return false;">Belum punya akun? Daftar</a>
+      &nbsp;·&nbsp;
+      <a href="#" style="font-size:12.5px;color:var(--accent);text-decoration:none;" onclick="window.doForgotPassword();return false;">Lupa password?</a>
     </div>
   </div>
 
@@ -611,15 +616,24 @@
     <h2>Ganti Password</h2>
     <div class="field">
       <label>Password Lama</label>
-      <input type="password" id="fOldPass" autocomplete="current-password">
+      <div style="display:flex;gap:6px;">
+        <input type="password" id="fOldPass" autocomplete="current-password" style="flex:1;">
+        <button type="button" class="btn btn-ghost" onclick="window.togglePwVisibility('fOldPass', this)">Tampilkan</button>
+      </div>
     </div>
     <div class="field">
       <label>Password Baru</label>
-      <input type="password" id="fNewPass" autocomplete="new-password" placeholder="minimal 6 karakter">
+      <div style="display:flex;gap:6px;">
+        <input type="password" id="fNewPass" autocomplete="new-password" placeholder="minimal 6 karakter" style="flex:1;">
+        <button type="button" class="btn btn-ghost" onclick="window.togglePwVisibility('fNewPass', this)">Tampilkan</button>
+      </div>
     </div>
     <div class="field">
       <label>Konfirmasi Password Baru</label>
-      <input type="password" id="fNewPass2" autocomplete="new-password">
+      <div style="display:flex;gap:6px;">
+        <input type="password" id="fNewPass2" autocomplete="new-password" style="flex:1;">
+        <button type="button" class="btn btn-ghost" onclick="window.togglePwVisibility('fNewPass2', this)">Tampilkan</button>
+      </div>
     </div>
     <div class="errMsg" id="changePasswordErr"></div>
     <div class="modalFooter">
@@ -764,7 +778,7 @@
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
   getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword,
-  EmailAuthProvider, reauthenticateWithCredential, updatePassword
+  EmailAuthProvider, reauthenticateWithCredential, updatePassword, sendPasswordResetEmail
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc, setDoc,
@@ -830,6 +844,9 @@ let presenceWatchTimer = null;
 let unsubPresence = null;
 const PRESENCE_HEARTBEAT_SEC = 25;
 const PRESENCE_ONLINE_THRESHOLD_SEC = 45; // dianggap offline kalau lebih lama dari ini tanpa heartbeat
+let idleTimer = null;
+const IDLE_TIMEOUT_MS = 10 * 60 * 1000; // 10 menit tanpa aktivitas → auto logout
+const IDLE_EVENTS = ["mousemove", "mousedown", "keydown", "scroll", "touchstart", "click"];
 
 // ---------------------------------------------------------------------
 // Show/hide field "Lainnya" untuk kategori & jenis kontrak
@@ -995,10 +1012,41 @@ window.saveNewPassword = async function(){
   }
 };
 
+window.togglePwVisibility = function(inputId, btnEl){
+  const input = document.getElementById(inputId);
+  const showing = input.type === "text";
+  input.type = showing ? "password" : "text";
+  btnEl.textContent = showing ? "Tampilkan" : "Sembunyikan";
+};
+
+window.doForgotPassword = async function(){
+  const email = document.getElementById("loginEmail").value.trim();
+  const errEl = document.getElementById("loginErr");
+  errEl.textContent = "";
+  if(!email){
+    errEl.textContent = "Isi email di atas dulu, baru klik \"Lupa password?\".";
+    return;
+  }
+  try{
+    await sendPasswordResetEmail(auth, email);
+    errEl.style.color = "var(--green)";
+    errEl.textContent = "Link reset password sudah dikirim ke " + email + ". Cek inbox (dan folder spam).";
+  }catch(e){
+    errEl.style.color = "";
+    if(e.code === "auth/user-not-found"){
+      errEl.textContent = "Email ini tidak terdaftar.";
+    } else {
+      errEl.textContent = "Gagal mengirim email reset. Coba lagi.";
+    }
+    console.error(e);
+  }
+};
+
 window.doLogin = async function(){
   const email = document.getElementById("loginEmail").value.trim();
   const pass = document.getElementById("loginPass").value;
   const errEl = document.getElementById("loginErr");
+  errEl.style.color = "";
   errEl.textContent = "";
   if(!email || !pass){
     errEl.textContent = "Isi email dan password.";
@@ -1064,12 +1112,14 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById("viewTabsBar").style.display = currentRole === "admin" ? "flex" : "none";
 
     startPresenceHeartbeat();
+    startIdleWatcher();
     listenItems();
   } else {
     currentUser = null;
     currentRole = null;
     stopPresenceHeartbeat();
     stopPresenceWatch();
+    stopIdleWatcher();
     document.getElementById("loginScreen").style.display = "flex";
     document.getElementById("appScreen").style.display = "none";
     if(unsubItems) unsubItems();
@@ -1184,6 +1234,28 @@ window.toggleDashDetail = function(){
 // ---------------------------------------------------------------------
 // MANAJEMEN USER (khusus admin)
 // ---------------------------------------------------------------------
+// ---------------------------------------------------------------------
+// AUTO-LOGOUT setelah 10 menit tanpa aktivitas (mouse/keyboard/scroll/klik).
+// ---------------------------------------------------------------------
+function resetIdleTimer(){
+  if(idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(handleIdleTimeout, IDLE_TIMEOUT_MS);
+}
+async function handleIdleTimeout(){
+  if(!currentUser) return;
+  await window.doLogout();
+  document.getElementById("loginErr").textContent =
+    "Anda logout otomatis karena tidak ada aktivitas selama 10 menit.";
+}
+function startIdleWatcher(){
+  IDLE_EVENTS.forEach(evt => document.addEventListener(evt, resetIdleTimer, { passive: true }));
+  resetIdleTimer();
+}
+function stopIdleWatcher(){
+  IDLE_EVENTS.forEach(evt => document.removeEventListener(evt, resetIdleTimer));
+  if(idleTimer){ clearTimeout(idleTimer); idleTimer = null; }
+}
+
 // ---------------------------------------------------------------------
 // PRESENCE (online) — heartbeat berkala; dianggap offline kalau tidak
 // lapor selama PRESENCE_ONLINE_THRESHOLD_SEC. Bukan deteksi real-time
