@@ -45,7 +45,7 @@
     display:flex;height:14px;border-radius:7px;overflow:hidden;margin-bottom:12px;
     background:#EFEFEC;
   }
-  .stackedBar .stackSeg{height:100%;transition:width .3s;}
+  .stackedBar .stackSeg{height:100%;transition:width .3s;cursor:pointer;}
   .legendRow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
   .legendChip{
     display:inline-flex;align-items:center;gap:6px;
@@ -216,6 +216,12 @@
   .jobname .recentBadge{
     font-size:10px;font-family:'IBM Plex Mono',monospace;font-weight:600;
     color:var(--accent);background:var(--accent-soft);
+    padding:1px 7px;border-radius:8px;margin-left:8px;vertical-align:middle;
+    text-transform:uppercase;letter-spacing:.02em;
+  }
+  .jobname .stuckBadge{
+    font-size:10px;font-family:'IBM Plex Mono',monospace;font-weight:600;
+    color:var(--red);background:var(--red-soft);
     padding:1px 7px;border-radius:8px;margin-left:8px;vertical-align:middle;
     text-transform:uppercase;letter-spacing:.02em;
   }
@@ -521,6 +527,7 @@
 
     <div class="toolbar">
       <div class="filters">
+        <input type="text" id="searchKeyword" placeholder="Cari apa saja..." oninput="window.onFilterChange()" style="padding:7px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;font-family:inherit;min-width:200px;">
         <select id="filterKategori" onchange="window.onFilterChange()">
           <option value="">Semua Kategori</option>
           <option>Maintenance</option>
@@ -853,6 +860,7 @@ const PRESENCE_ONLINE_THRESHOLD_SEC = 45; // dianggap offline kalau lebih lama d
 let idleTimer = null;
 const IDLE_TIMEOUT_MS = 10 * 60 * 1000; // 10 menit tanpa aktivitas → auto logout
 const IDLE_EVENTS = ["mousemove", "mousedown", "keydown", "scroll", "touchstart", "click"];
+let dashDetailExpanded = false; // supaya panel rincian tidak tertutup ulang tiap kali search diketik
 
 // ---------------------------------------------------------------------
 // Show/hide field "Lainnya" untuk kategori & jenis kontrak
@@ -1199,6 +1207,26 @@ function getItemStatus(item){
   return { key: "progress", ...STATUS_DEF.progress };
 }
 
+// ---------------------------------------------------------------------
+// WLA: usia "macet" — berapa hari sejak progress TERAKHIR benar-benar
+// berubah (bukan sekadar field lain diedit). Untuk data lama yang belum
+// punya progressUpdatedAt (dibuat sebelum fitur ini ada), pakai createdAt
+// sebagai pendekatan terbaik yang tersedia.
+// ---------------------------------------------------------------------
+const STUCK_THRESHOLD_DAYS = 14; // asumsi ambang "macet" — bisa disesuaikan
+
+function getAgeDays(item){
+  const ms = tsMillis(item.progressUpdatedAt) || tsMillis(item.createdAt);
+  if(!ms) return null;
+  return Math.floor((Date.now() - ms) / 86400000);
+}
+
+function isStuck(item){
+  if(getTotalProgress(item) >= 100) return false;
+  const age = getAgeDays(item);
+  return age !== null && age >= STUCK_THRESHOLD_DAYS;
+}
+
 function daysUntil(dateStr){
   const today = new Date(); today.setHours(0,0,0,0);
   const target = new Date(dateStr);
@@ -1239,9 +1267,9 @@ window.switchView = function(view){
 window.toggleDashDetail = function(){
   const panel = document.getElementById("dashDetailPanel");
   const btn = document.getElementById("dashDetailToggleBtn");
-  const showing = panel.style.display === "block";
-  panel.style.display = showing ? "none" : "block";
-  btn.textContent = showing ? "Lihat rincian kinerja per kategori & planner ▾" : "Sembunyikan rincian ▴";
+  dashDetailExpanded = !dashDetailExpanded;
+  panel.style.display = dashDetailExpanded ? "block" : "none";
+  btn.textContent = dashDetailExpanded ? "Sembunyikan rincian ▴" : "Lihat rincian kinerja per kategori & planner ▾";
 };
 
 // ---------------------------------------------------------------------
@@ -1257,8 +1285,7 @@ function resetIdleTimer(){
 async function handleIdleTimeout(){
   if(!currentUser) return;
   await window.doLogout();
-  document.getElementById("loginErr").textContent =
-    "Anda logout otomatis karena tidak ada aktivitas selama 10 menit.";
+  document.getElementById("loginErr").textContent = "Signed out due to inactivity.";
 }
 function startIdleWatcher(){
   IDLE_EVENTS.forEach(evt => document.addEventListener(evt, resetIdleTimer, { passive: true }));
@@ -1528,15 +1555,16 @@ window.goFilterSignal = function(sig){
 // ---------------------------------------------------------------------
 function renderStatusOverview(){
   const el = document.getElementById("statusOverviewCard");
-  const total = allItems.length || 1; // hindari div/0
+  const { items } = getFilteredItems();
+  const total = items.length || 1; // hindari div/0
   const counts = { belum:0, progress:0, selesai:0, overdue:0 };
-  allItems.forEach(i => { counts[getItemStatus(i).key]++; });
-  const expiringCount = allItems.filter(isExpiringSoon).length;
+  items.forEach(i => { counts[getItemStatus(i).key]++; });
+  const expiringCount = items.filter(isExpiringSoon).length;
 
   const segHtml = ["belum","progress","selesai","overdue"].map(key => {
     const pct = Math.round((counts[key] / total) * 100);
     if(pct === 0) return "";
-    return `<div class="stackSeg" style="width:${pct}%;background:${STATUS_DEF[key].color}"></div>`;
+    return `<div class="stackSeg" style="width:${pct}%;background:${STATUS_DEF[key].color}" title="${STATUS_DEF[key].label}: ${counts[key]} (${pct}%) — klik untuk filter" onclick="window.goFilterSignal('${key}')"></div>`;
   }).join("");
 
   const chipsHtml = ["belum","progress","selesai","overdue"].map(key => `
@@ -1553,17 +1581,23 @@ function renderStatusOverview(){
     </button>
   `;
 
-  let detailHtml = `<div class="dashSection"><h3>Distribusi per Kategori</h3><div class="planCard">${renderCategoryBars()}</div></div>`;
+  let detailHtml = `<div class="dashSection"><h3>Distribusi per Kategori</h3><div class="planCard">${renderCategoryBars(items)}</div></div>`;
   if(currentRole === "manager" || currentRole === "admin"){
     detailHtml += `
       <div class="dashSection">
         <h3>Kinerja per Planner</h3>
         <div class="dashSub">Rata-rata progress dari seluruh pekerjaan yang dipegang masing-masing planner.</div>
-        <div class="planCard">${renderPlannerBars()}</div>
+        <div class="planCard">${renderPlannerBars(items)}</div>
+      </div>`;
+    detailHtml += `
+      <div class="dashSection">
+        <h3>Analisis Beban Kerja (WLA) per Planner</h3>
+        <div class="dashSub">Hanya menghitung tugas yang belum 100% selesai — bukan riwayat lengkap.</div>
+        <div class="planCard">${renderWLA(items)}</div>
       </div>`;
   }
   if(currentRole === "planner"){
-    detailHtml += renderMyPerformance();
+    detailHtml += renderMyPerformance(items);
   }
 
   el.innerHTML = `
@@ -1572,11 +1606,18 @@ function renderStatusOverview(){
     <button class="dashDetailToggle" id="dashDetailToggleBtn" onclick="window.toggleDashDetail()">Lihat rincian kinerja per kategori & planner ▾</button>
     <div id="dashDetailPanel">${detailHtml}</div>
   `;
+
+  // Pertahankan status buka/tutup panel rincian — supaya tidak nutup lagi
+  // tiap kali dashboard di-render ulang (misal saat mengetik di search box).
+  if(dashDetailExpanded){
+    document.getElementById("dashDetailPanel").style.display = "block";
+    document.getElementById("dashDetailToggleBtn").textContent = "Sembunyikan rincian ▴";
+  }
 }
 
-function renderCategoryBars(){
+function renderCategoryBars(items){
   const cats = {};
-  allItems.forEach(i => {
+  items.forEach(i => {
     const k = i.kategori || "Lainnya";
     if(!cats[k]) cats[k] = { count: 0, sumProgress: 0 };
     cats[k].count++;
@@ -1603,9 +1644,9 @@ function renderCategoryBars(){
   }).join("");
 }
 
-function renderPlannerBars(){
+function renderPlannerBars(items){
   const planners = {};
-  allItems.forEach(i => {
+  items.forEach(i => {
     const p = i.pic || "(Tidak diisi)";
     if(!planners[p]) planners[p] = { count:0, sumProgress:0, overdue:0, done:0 };
     planners[p].count++;
@@ -1635,6 +1676,70 @@ function renderPlannerBars(){
       </div>
     `;
   }).join("");
+}
+
+// ---------------------------------------------------------------------
+// WORKLOAD ANALYSIS (WLA) per planner:
+// - Tugas Aktif: jumlah tugas yang belum 100% (belum/progress/overdue)
+// - Sisa Beban: total poin progress yang MASIH harus diselesaikan di
+//   seluruh tugas aktif mereka (tugas 90% jauh lebih ringan dari 10%,
+//   walau sama-sama dihitung "1 tugas aktif")
+// - Rata-rata & Usia Terlama Macet: berbasis progressUpdatedAt (kapan
+//   checklist sub-tahap terakhir benar-benar berubah), bukan sekadar
+//   field lain diedit
+// ---------------------------------------------------------------------
+function renderWLA(items){
+  const data = {};
+  items.forEach(i => {
+    const total = getTotalProgress(i);
+    if(total >= 100) return; // WLA cuma soal beban AKTIF, yang selesai tidak dihitung
+    const p = i.pic || "(Tidak diisi)";
+    if(!data[p]) data[p] = { activeCount:0, remainingSum:0, ages:[], stuckCount:0 };
+    data[p].activeCount++;
+    data[p].remainingSum += (100 - total);
+    const age = getAgeDays(i);
+    if(age !== null) data[p].ages.push(age);
+    if(isStuck(i)) data[p].stuckCount++;
+  });
+
+  const keys = Object.keys(data).sort((a,b) => data[b].remainingSum - data[a].remainingSum);
+  if(keys.length === 0) return `<div class="hint">Tidak ada tugas aktif saat ini — semua sudah selesai.</div>`;
+
+  const rows = keys.map(p => {
+    const d = data[p];
+    const avgAge = d.ages.length ? Math.round(d.ages.reduce((s,a)=>s+a,0) / d.ages.length) : 0;
+    const oldestAge = d.ages.length ? Math.max(...d.ages) : 0;
+    return `
+      <tr style="cursor:pointer;border-bottom:1px solid #F0F0EE;" onclick='window.goFilterPlanner(${JSON.stringify(p)})'>
+        <td style="padding:6px 8px;">${escapeHtml(p)}</td>
+        <td style="padding:6px 8px;text-align:right;" class="mono">${d.activeCount}</td>
+        <td style="padding:6px 8px;text-align:right;" class="mono">${d.remainingSum} pts</td>
+        <td style="padding:6px 8px;text-align:right;" class="mono">${avgAge} hari</td>
+        <td style="padding:6px 8px;text-align:right;" class="mono">${oldestAge} hari</td>
+        <td style="padding:6px 8px;text-align:right;${d.stuckCount>0?'color:var(--red);font-weight:600;':''}" class="mono">${d.stuckCount}</td>
+      </tr>
+    `;
+  }).join("");
+
+  return `
+    <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+      <thead>
+        <tr style="border-bottom:1px solid var(--line);text-align:left;color:var(--ink-soft);font-size:11px;text-transform:uppercase;">
+          <th style="padding:6px 8px;">Planner</th>
+          <th style="padding:6px 8px;text-align:right;">Tugas Aktif</th>
+          <th style="padding:6px 8px;text-align:right;">Sisa Beban</th>
+          <th style="padding:6px 8px;text-align:right;">Rata&sup2; Usia</th>
+          <th style="padding:6px 8px;text-align:right;">Usia Terlama</th>
+          <th style="padding:6px 8px;text-align:right;">Macet (&ge;${STUCK_THRESHOLD_DAYS}h)</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="hint" style="margin-top:8px;">
+      "Sisa Beban" = total poin progress (dari 100 per tugas) yang belum diselesaikan di semua tugas aktif planner tsb.
+      "Macet" = tugas aktif yang progress-nya tidak berubah sama sekali selama ${STUCK_THRESHOLD_DAYS} hari atau lebih. Klik baris untuk lihat semua tugas planner tsb.
+    </div>
+  `;
 }
 
 // ---------------------------------------------------------------------
@@ -1838,11 +1943,14 @@ window.exportPdfReport = function(){
   setTimeout(() => printWindow.print(), 350);
 };
 
-function renderMyPerformance(){
-  const myItems = allItems.filter(i => i.pic === currentName);
+function renderMyPerformance(items){
+  const myItems = items.filter(i => i.pic === currentName);
   const total = myItems.length;
   const done = myItems.filter(i => getTotalProgress(i) >= 100).length;
   const overdue = myItems.filter(isProgressOverdue);
+  const stuck = myItems.filter(isStuck);
+  const activeItems = myItems.filter(i => getTotalProgress(i) < 100);
+  const remainingSum = activeItems.reduce((s,i) => s + (100 - getTotalProgress(i)), 0);
   const avgProgress = total > 0 ? Math.round(myItems.reduce((s,i) => s + getTotalProgress(i), 0) / total) : 0;
 
   const overdueListHtml = overdue.length === 0
@@ -1854,6 +1962,15 @@ function renderMyPerformance(){
         </div>
       `).join("")}</div>`;
 
+  const stuckListHtml = stuck.length === 0
+    ? `<div class="hint">Tidak ada tugas yang mengendap tanpa progress. Baik.</div>`
+    : `<div class="myOverdueList">${stuck.map(i => `
+        <div class="moItem" style="cursor:pointer;" onclick='window.switchView("list");window.openEditModal(${JSON.stringify(i.id)})'>
+          <span>${escapeHtml(i.namaPekerjaan)}</span>
+          <span class="moDate">Macet ${getAgeDays(i)} hari</span>
+        </div>
+      `).join("")}</div>`;
+
   return `
     <div class="dashSection">
       <h3>Kinerja Saya</h3>
@@ -1861,12 +1978,16 @@ function renderMyPerformance(){
         <div class="planCardGrid">
           <div><div class="num mono" style="font-size:22px;">${total}</div><div class="lbl">Total Tugas Saya</div></div>
           <div><div class="num mono" style="font-size:22px;">${done}</div><div class="lbl">Selesai</div></div>
-          <div><div class="num mono" style="font-size:22px;">${avgProgress}%</div><div class="lbl">Rata-rata Progress</div></div>
+          <div><div class="num mono" style="font-size:22px;">${remainingSum}</div><div class="lbl">Sisa Beban (pts)</div></div>
           <div><div class="num mono" style="font-size:22px;color:${overdue.length>0?'var(--red)':'inherit'}">${overdue.length}</div><div class="lbl">Terlambat</div></div>
         </div>
         <div style="margin-top:14px;">
           <div class="stageGroupTitle" style="margin-bottom:8px;">Pekerjaan Saya yang Terlambat</div>
           ${overdueListHtml}
+        </div>
+        <div style="margin-top:14px;">
+          <div class="stageGroupTitle" style="margin-bottom:8px;">Pekerjaan Saya yang Mengendap (&ge;${STUCK_THRESHOLD_DAYS} hari tanpa progress)</div>
+          ${stuckListHtml}
         </div>
       </div>
     </div>
@@ -1894,6 +2015,7 @@ function fmtDate(dateStr){
 window.onFilterChange = function(){
   currentPage = 1;
   window.renderTable();
+  renderStatusOverview();
 };
 
 window.goToPage = function(page){
@@ -1913,6 +2035,7 @@ function getFilteredItems(){
   const fKategori = document.getElementById("filterKategori").value;
   const fPlanner = document.getElementById("filterPlanner").value;
   const fSignal = document.getElementById("filterSignal").value;
+  const fSearch = (document.getElementById("searchKeyword").value || "").trim().toLowerCase();
 
   let items = [...allItems];
   if(fKategori) items = items.filter(i => i.kategori === fKategori);
@@ -1922,8 +2045,18 @@ function getFilteredItems(){
   if(fSignal === "selesai") items = items.filter(i => getItemStatus(i).key === "selesai");
   if(fSignal === "overdue") items = items.filter(i => getItemStatus(i).key === "overdue");
   if(fSignal === "expiring") items = items.filter(isExpiringSoon);
+  if(fSearch){
+    items = items.filter(i => {
+      const haystack = [
+        i.namaPekerjaan, i.pic, i.kategori, i.contractType,
+        i.sumberKebutuhan, i.progressNote, i.keterangan
+      ].filter(Boolean).join(" ").toLowerCase();
+      return haystack.includes(fSearch);
+    });
+  }
 
   const filterLabels = [];
+  if(fSearch) filterLabels.push(`Pencarian: "${fSearch}"`);
   if(fKategori) filterLabels.push(`Kategori: ${fKategori}`);
   if(fPlanner) filterLabels.push(`Planner: ${fPlanner}`);
   if(fSignal){
@@ -1992,7 +2125,7 @@ window.renderTable = function(){
     return `
       <tr class="${overdue ? 'rowOverdue' : ''}">
         <td>
-          <div class="jobname">${escapeHtml(item.namaPekerjaan)}${relativeUpdateBadge(item)}</div>
+          <div class="jobname">${escapeHtml(item.namaPekerjaan)}${relativeUpdateBadge(item)}${isStuck(item) ? `<span class="stuckBadge">Macet ${getAgeDays(item)}h</span>` : ""}</div>
           ${item.progressNote ? `<div class="progNote">${escapeHtml(item.progressNote)}</div>` : ""}
         </td>
         <td><span class="pill ${pillClass}">${escapeHtml(item.kategori || "—")}</span></td>
@@ -2148,6 +2281,11 @@ window.saveItem = async function(){
     let contractType = document.getElementById("fContractType").value;
     if(contractType === "Lainnya") contractType = document.getElementById("fContractTypeLainnya").value.trim() || "Lainnya";
 
+    const newStages = getStagesFromForm();
+    const existingItem = id ? allItems.find(i => i.id === id) : null;
+    const oldStages = existingItem ? existingItem.stages : null;
+    const stagesChanged = !oldStages || STAGE_TEMPLATE.some(s => !!oldStages[s.key] !== !!newStages[s.key]);
+
     const payload = {
       namaPekerjaan: nama,
       kategori: kategori,
@@ -2158,15 +2296,21 @@ window.saveItem = async function(){
       sumberKebutuhan: document.getElementById("fSumber").value.trim(),
       progressNote: document.getElementById("fProgressNote").value.trim(),
       keterangan: document.getElementById("fKet").value.trim(),
-      stages: getStagesFromForm(),
+      stages: newStages,
       updatedAt: serverTimestamp()
     };
+    // progressUpdatedAt HANYA disentuh kalau checklist sub-tahap benar-benar
+    // berubah — dipakai untuk analisis "usia macet" (WLA). Kalau tidak
+    // disertakan di payload, nilai lama di Firestore tetap utuh (updateDoc
+    // hanya menyentuh field yang ada di payload).
+    if(stagesChanged) payload.progressUpdatedAt = serverTimestamp();
 
     if(id){
       await updateDoc(doc(db, "procurement_items", id), payload);
     } else {
       payload.createdAt = serverTimestamp();
       payload.createdBy = currentName;
+      payload.progressUpdatedAt = serverTimestamp(); // item baru = mulai hitung dari sini
       await addDoc(collection(db, "procurement_items"), payload);
     }
     window.closeModal();
@@ -2301,7 +2445,8 @@ window.handleExcelImport = function(event){
           stages,
           createdAt: serverTimestamp(),
           createdBy: currentName,
-          updatedAt: serverTimestamp()
+          updatedAt: serverTimestamp(),
+          progressUpdatedAt: serverTimestamp()
         });
       });
 
