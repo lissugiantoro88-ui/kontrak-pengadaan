@@ -487,9 +487,17 @@
       <label for="regPass">Password</label>
       <input type="password" id="regPass" autocomplete="new-password" placeholder="minimal 6 karakter">
     </div>
+    <div class="field">
+      <label for="regRole">Daftar sebagai</label>
+      <select id="regRole">
+        <option value="planner">Planner</option>
+        <option value="viewer">Viewer</option>
+      </select>
+      <div class="hint">Role Manager/Admin/Senior Planner hanya bisa dibuat langsung oleh admin.</div>
+    </div>
     <button class="btn btn-primary btn-block" onclick="window.doRegister()">Daftar</button>
     <div class="errMsg" id="registerErr"></div>
-    <div class="hint" style="text-align:center;margin-top:6px;">Akun baru perlu disetujui admin sebelum bisa dipakai.</div>
+    <div class="hint" style="text-align:center;margin-top:6px;">Akun baru perlu disetujui sebelum bisa dipakai.</div>
     <div style="text-align:center;margin-top:14px;">
       <a href="#" style="font-size:12.5px;color:var(--accent);text-decoration:none;" onclick="window.toggleRegister(false);return false;">Sudah punya akun? Masuk</a>
     </div>
@@ -548,6 +556,7 @@
           <option value="overdue">Overdue</option>
           <option value="expiring">Kontrak Mendekati Habis</option>
         </select>
+        <button class="btn btn-ghost" onclick="window.resetFilters()">Reset</button>
       </div>
       <div style="display:flex;gap:8px;">
         <button class="btn btn-ghost" id="btnExportPdf" onclick="window.exportPdfReport()">Export PDF</button>
@@ -591,13 +600,13 @@
     </div>
     </div>
 
-    <!-- ===== VIEW: MANAJEMEN USER (admin) ===== -->
+    <!-- ===== VIEW: MANAJEMEN USER (admin & senior planner) ===== -->
     <div id="viewUsers" style="display:none;">
-      <div class="presenceCard" id="presenceCard"></div>
+      <div class="presenceCard" id="presenceCard" style="display:none;"></div>
 
       <div class="toolbar">
         <div></div>
-        <button class="btn btn-primary" onclick="window.openUserModal()">+ Tambah User Langsung</button>
+        <button class="btn btn-primary" id="btnAddUserDirect" onclick="window.openUserModal()">+ Tambah User Langsung</button>
       </div>
 
       <div class="dashSection" id="pendingSection" style="display:none;">
@@ -610,7 +619,7 @@
         </div>
       </div>
 
-      <div class="dashSection">
+      <div class="dashSection" id="activeUsersSection">
         <h3>User Aktif</h3>
         <div class="tableWrap">
           <table>
@@ -677,8 +686,10 @@
       <label>Role</label>
       <select id="fUserRole">
         <option value="planner">Planner</option>
+        <option value="senior_planner">Senior Planner</option>
         <option value="manager">Manager</option>
         <option value="admin">Admin</option>
+        <option value="viewer">Viewer</option>
       </select>
     </div>
     <div class="errMsg" id="userModalErr"></div>
@@ -781,7 +792,7 @@
     <div class="modalFooter">
       <button class="btn btn-ghost" id="btnDelete" style="margin-right:auto;color:var(--red);border-color:var(--red-soft);display:none;" onclick="window.deleteItem()">Hapus</button>
       <button class="btn btn-ghost" onclick="window.closeModal()">Batal</button>
-      <button class="btn btn-primary" onclick="window.saveItem()">Simpan</button>
+      <button class="btn btn-primary" id="btnSaveItem" onclick="window.saveItem()">Simpan</button>
     </div>
   </div>
 </div>
@@ -842,6 +853,11 @@ const KATEGORI_PILL_CLASS = {
   "Take Over": "pill-takeover",
   "Tools": "pill-tools",
   "Training": "pill-training"
+};
+
+const ROLE_LABELS = {
+  admin: "Admin", manager: "Manager", senior_planner: "Senior Planner",
+  planner: "Planner", viewer: "Viewer"
 };
 
 let currentUser = null;
@@ -951,14 +967,15 @@ window.doRegister = async function(){
 
   try{
     suppressAuthCheck = true;
+    const requestedRole = document.getElementById("regRole").value;
     const cred = await createUserWithEmailAndPassword(auth, email, pass);
     await setDoc(doc(db, "users", cred.user.uid), {
-      nama, email, role: "pending", createdAt: serverTimestamp()
+      nama, email, role: "pending", requestedRole, createdAt: serverTimestamp()
     });
     await signOut(auth);
     window.toggleRegister(false);
     document.getElementById("loginErr").textContent =
-      "Pendaftaran berhasil. Akun Anda menunggu persetujuan admin sebelum bisa dipakai.";
+      "Pendaftaran berhasil. Akun Anda menunggu persetujuan sebelum bisa dipakai.";
   }catch(e){
     if(e.code === "auth/email-already-in-use"){
       errEl.textContent = "Email ini sudah terdaftar.";
@@ -1111,7 +1128,7 @@ onAuthStateChanged(auth, async (user) => {
     currentRole = uData.role || "planner";
     currentName = uData.nama || user.email;
 
-    if(!["planner","manager","admin"].includes(currentRole)){
+    if(!["planner","manager","admin","senior_planner","viewer"].includes(currentRole)){
       const msg = currentRole === "pending"
         ? "Pendaftaran Anda berhasil, tapi masih menunggu persetujuan admin."
         : "Akun Anda dinonaktifkan atau belum diberi akses. Hubungi admin.";
@@ -1124,13 +1141,13 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById("loginScreen").style.display = "none";
     document.getElementById("appScreen").style.display = "block";
     document.getElementById("whoName").textContent = currentName;
-    document.getElementById("whoRole").textContent = currentRole;
-    const canWrite = currentRole === "planner" || currentRole === "admin";
+    document.getElementById("whoRole").textContent = ROLE_LABELS[currentRole] || currentRole;
+    const canWrite = ["planner", "admin", "senior_planner"].includes(currentRole);
     document.getElementById("btnAdd").style.display = canWrite ? "inline-flex" : "none";
     document.getElementById("btnImport").style.display = canWrite ? "inline-flex" : "none";
-    document.getElementById("btnExportPdf").style.display = (currentRole === "manager" || currentRole === "admin") ? "inline-flex" : "none";
-    document.getElementById("tabUsers").style.display = currentRole === "admin" ? "inline-block" : "none";
-    document.getElementById("viewTabsBar").style.display = currentRole === "admin" ? "flex" : "none";
+    document.getElementById("btnExportPdf").style.display = ["manager", "admin", "senior_planner"].includes(currentRole) ? "inline-flex" : "none";
+    document.getElementById("tabUsers").style.display = ["admin", "senior_planner"].includes(currentRole) ? "inline-block" : "none";
+    document.getElementById("viewTabsBar").style.display = ["admin", "senior_planner"].includes(currentRole) ? "flex" : "none";
 
     startPresenceHeartbeat();
     startIdleWatcher();
@@ -1361,6 +1378,15 @@ async function loadUsersPanel(){
   const pendingBody = document.getElementById("pendingTableBody");
   const activeBody = document.getElementById("usersTableBody");
   const pendingSection = document.getElementById("pendingSection");
+  const isAdmin = currentRole === "admin";
+  const isSeniorPlanner = currentRole === "senior_planner";
+
+  // Senior Planner hanya boleh approve/reject pending — tidak lihat/ubah
+  // user yang sudah aktif, dan tidak bisa bikin user langsung.
+  document.getElementById("activeUsersSection").style.display = isAdmin ? "block" : "none";
+  document.getElementById("btnAddUserDirect").style.display = isAdmin ? "inline-flex" : "none";
+  document.getElementById("presenceCard").style.display = isAdmin ? "block" : "none";
+
   activeBody.innerHTML = `<tr><td colspan="4">Memuat...</td></tr>`;
   try{
     const snap = await getDocs(collection(db, "users"));
@@ -1371,16 +1397,31 @@ async function loadUsersPanel(){
     const pending = users.filter(u => u.role === "pending");
     const active = users.filter(u => u.role !== "pending");
 
+    // Dropdown role saat approve: admin bisa pilih semua role, senior
+    // planner cuma boleh viewer/planner (ditegakkan juga di Firestore Rules,
+    // jadi walau UI ini di-bypass tetap tidak akan tembus).
+    const approveRoleOptions = isAdmin
+      ? `<option value="planner">Planner</option>
+         <option value="senior_planner">Senior Planner</option>
+         <option value="manager">Manager</option>
+         <option value="admin">Admin</option>
+         <option value="viewer">Viewer</option>`
+      : `<option value="planner">Planner</option>
+         <option value="viewer">Viewer</option>`;
+
     pendingSection.style.display = pending.length > 0 ? "block" : "none";
-    pendingBody.innerHTML = pending.map(u => `
+    pendingBody.innerHTML = pending.map(u => {
+      const requested = u.requestedRole || "planner";
+      return `
       <tr>
         <td>${escapeHtml(u.nama || "—")}</td>
-        <td>${escapeHtml(u.email || "—")}</td>
+        <td>
+          ${escapeHtml(u.email || "—")}
+          ${u.requestedRole ? `<div class="hint">Ingin daftar sebagai: ${escapeHtml(ROLE_LABELS[u.requestedRole] || u.requestedRole)}</div>` : ""}
+        </td>
         <td>
           <select id="approveRole_${u.id}">
-            <option value="planner">Planner</option>
-            <option value="manager">Manager</option>
-            <option value="admin">Admin</option>
+            ${approveRoleOptions.replace(`value="${requested}"`, `value="${requested}" selected`)}
           </select>
         </td>
         <td>
@@ -1390,7 +1431,10 @@ async function loadUsersPanel(){
           </div>
         </td>
       </tr>
-    `).join("");
+    `;
+    }).join("");
+
+    if(!isAdmin) return; // senior planner berhenti di sini, tidak lihat User Aktif
 
     if(active.length === 0){
       activeBody.innerHTML = `<tr><td colspan="4">Belum ada user aktif.</td></tr>`;
@@ -1404,8 +1448,10 @@ async function loadUsersPanel(){
         <td>
           <select onchange="window.changeUserRole(${JSON.stringify(u.id)}, this.value)" ${u.id === currentUser.uid ? "disabled" : ""}>
             <option value="planner" ${u.role==="planner"?"selected":""}>Planner</option>
+            <option value="senior_planner" ${u.role==="senior_planner"?"selected":""}>Senior Planner</option>
             <option value="manager" ${u.role==="manager"?"selected":""}>Manager</option>
             <option value="admin" ${u.role==="admin"?"selected":""}>Admin</option>
+            <option value="viewer" ${u.role==="viewer"?"selected":""}>Viewer</option>
             <option value="disabled" ${u.role==="disabled"?"selected":""}>Nonaktif</option>
           </select>
         </td>
@@ -1582,7 +1628,7 @@ function renderStatusOverview(){
   `;
 
   let detailHtml = `<div class="dashSection"><h3>Distribusi per Kategori</h3><div class="planCard">${renderCategoryBars(items)}</div></div>`;
-  if(currentRole === "manager" || currentRole === "admin"){
+  if(currentRole === "manager" || currentRole === "admin" || currentRole === "senior_planner"){
     detailHtml += `
       <div class="dashSection">
         <h3>Kinerja per Planner</h3>
@@ -1596,7 +1642,7 @@ function renderStatusOverview(){
         <div class="planCard">${renderWLA(items)}</div>
       </div>`;
   }
-  if(currentRole === "planner"){
+  if(currentRole === "planner" || currentRole === "senior_planner"){
     detailHtml += renderMyPerformance(items);
   }
 
@@ -2012,6 +2058,14 @@ function fmtDate(dateStr){
   return dateStr ? new Date(dateStr).toLocaleDateString('id-ID', {day:'2-digit',month:'short',year:'numeric'}) : "—";
 }
 
+window.resetFilters = function(){
+  document.getElementById("searchKeyword").value = "";
+  document.getElementById("filterKategori").value = "";
+  document.getElementById("filterPlanner").value = "";
+  document.getElementById("filterSignal").value = "";
+  window.onFilterChange();
+};
+
 window.onFilterChange = function(){
   currentPage = 1;
   window.renderTable();
@@ -2179,7 +2233,7 @@ window.openAddModal = function(){
   document.getElementById("fKategori").value = "Maintenance";
   document.getElementById("fContractType").value = "All in";
   resetLainnyaWraps();
-  document.getElementById("fPic").value = currentRole === "planner" ? currentName : "";
+  document.getElementById("fPic").value = ["planner", "senior_planner"].includes(currentRole) ? currentName : "";
   document.getElementById("fTarget").value = "";
   document.getElementById("fEffective").value = "";
   document.getElementById("fSumber").value = "";
@@ -2230,7 +2284,8 @@ window.openEditModal = function(id){
   const hint = document.getElementById("targetEditHint");
   hint.textContent = item.targetLastEditedBy ? `Terakhir diubah oleh ${item.targetLastEditedBy}` : "";
 
-  document.getElementById("btnDelete").style.display = (currentRole === "planner" || currentRole === "admin") ? "inline-flex" : "none";
+  document.getElementById("btnDelete").style.display = ["planner", "admin", "senior_planner"].includes(currentRole) ? "inline-flex" : "none";
+  document.getElementById("btnSaveItem").style.display = currentRole === "viewer" ? "none" : "inline-flex";
   setFieldPermissions(true);
   document.getElementById("itemModal").classList.add("show");
 };
@@ -2238,12 +2293,15 @@ window.openEditModal = function(id){
 // Manager: hanya field targetSelesai yang bisa diedit. Field lain read-only.
 // Planner & Admin: bebas edit semua field.
 function setFieldPermissions(isEdit){
+  const isViewer = currentRole === "viewer";
   const managerOnly = currentRole === "manager" && isEdit;
+  const readOnlyAll = isViewer || managerOnly;
   const fields = ["fNama","fKategori","fKategoriLainnya","fContractType","fContractTypeLainnya",
                   "fPic","fEffective","fSumber","fProgressNote","fKet"];
-  fields.forEach(id => { document.getElementById(id).disabled = managerOnly; });
-  document.querySelectorAll("#stageChecklist input[type=checkbox]").forEach(cb => { cb.disabled = managerOnly; });
-  document.getElementById("fTarget").disabled = false; // selalu bisa diisi planner & manager
+  fields.forEach(id => { document.getElementById(id).disabled = readOnlyAll; });
+  document.querySelectorAll("#stageChecklist input[type=checkbox]").forEach(cb => { cb.disabled = readOnlyAll; });
+  // Target tanggal: planner/admin/senior_planner/manager boleh isi — viewer TIDAK sama sekali.
+  document.getElementById("fTarget").disabled = isViewer;
 }
 
 window.closeModal = function(){
