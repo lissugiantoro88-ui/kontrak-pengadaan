@@ -147,7 +147,10 @@
     border:1px solid var(--line);
     border-radius:var(--radius);
     padding:14px 16px;
+    cursor:pointer;
+    transition:box-shadow .15s, border-color .15s;
   }
+  .sumCard:hover{box-shadow:0 2px 8px rgba(28,37,48,0.08);border-color:var(--accent);}
   .sumCard .num{font-family:'IBM Plex Mono',monospace;font-size:24px;font-weight:600;}
   .sumCard .lbl{font-size:11.5px;color:var(--ink-soft);margin-top:2px;}
   .sumCard.overdue .num{color:var(--red);}
@@ -303,9 +306,10 @@
   .dashSection .dashSub{font-size:12px;color:var(--ink-soft);margin-top:-8px;margin-bottom:14px;}
 
   .barChartRow{
-    display:flex;align-items:center;gap:12px;padding:9px 0;
-    border-bottom:1px solid #F0F0EE;
+    display:flex;align-items:center;gap:12px;padding:9px 6px;
+    border-bottom:1px solid #F0F0EE;cursor:pointer;border-radius:6px;
   }
+  .barChartRow:hover{background:#FAFBFC;}
   .barChartRow:last-child{border-bottom:none;}
   .barChartRow .bcLabel{width:130px;flex-shrink:0;font-size:13px;font-weight:500;}
   .barChartRow .bcTrack{
@@ -369,7 +373,7 @@
 
 <!-- ===================== LOGIN ===================== -->
 <div id="loginScreen">
-  <div class="loginBox">
+  <div class="loginBox" id="loginBoxMain">
     <div class="eyebrow">Technical Support · PT KPB</div>
     <h1>Monitoring Perencanaan<br>Pengadaan Kontrak</h1>
     <div class="field">
@@ -382,6 +386,32 @@
     </div>
     <button class="btn btn-primary btn-block" onclick="window.doLogin()">Masuk</button>
     <div class="errMsg" id="loginErr"></div>
+    <div style="text-align:center;margin-top:14px;">
+      <a href="#" style="font-size:12.5px;color:var(--accent);text-decoration:none;" onclick="window.toggleRegister(true);return false;">Belum punya akun? Daftar</a>
+    </div>
+  </div>
+
+  <div class="loginBox" id="registerBox" style="display:none;">
+    <div class="eyebrow">Technical Support · PT KPB</div>
+    <h1>Daftar Akun Baru</h1>
+    <div class="field">
+      <label for="regNama">Nama</label>
+      <input type="text" id="regNama">
+    </div>
+    <div class="field">
+      <label for="regEmail">Email</label>
+      <input type="email" id="regEmail" autocomplete="username">
+    </div>
+    <div class="field">
+      <label for="regPass">Password</label>
+      <input type="password" id="regPass" autocomplete="new-password" placeholder="minimal 6 karakter">
+    </div>
+    <button class="btn btn-primary btn-block" onclick="window.doRegister()">Daftar</button>
+    <div class="errMsg" id="registerErr"></div>
+    <div class="hint" style="text-align:center;margin-top:6px;">Akun baru perlu disetujui admin sebelum bisa dipakai.</div>
+    <div style="text-align:center;margin-top:14px;">
+      <a href="#" style="font-size:12.5px;color:var(--accent);text-decoration:none;" onclick="window.toggleRegister(false);return false;">Sudah punya akun? Masuk</a>
+    </div>
   </div>
 </div>
 
@@ -406,6 +436,7 @@
     <div class="viewTabs">
       <button class="viewTab active" id="tabList" onclick="window.switchView('list')">Daftar Pekerjaan</button>
       <button class="viewTab" id="tabDash" onclick="window.switchView('dashboard')">Dashboard Kinerja</button>
+      <button class="viewTab" id="tabUsers" style="display:none;" onclick="window.switchView('users')">Manajemen User</button>
     </div>
 
     <!-- ===== VIEW: DAFTAR PEKERJAAN ===== -->
@@ -426,6 +457,7 @@
         </select>
         <select id="filterSignal" onchange="window.onFilterChange()">
           <option value="">Semua</option>
+          <option value="berjalan">Sedang Berjalan</option>
           <option value="overdue">Progress Terlambat</option>
           <option value="expiring">Kontrak Mendekati Habis</option>
           <option value="done">Sudah Selesai (100%)</option>
@@ -465,8 +497,8 @@
             <option value="50">50 / halaman</option>
           </select>
           <button class="pageBtn" onclick="window.goToPage(1)" id="btnFirst">« Awal</button>
-          <button class="pageBtn" onclick="window.goToPage(currentPage-1)" id="btnPrev">‹ Sebelumnya</button>
-          <button class="pageBtn" onclick="window.goToPage(currentPage+1)" id="btnNext">Berikutnya ›</button>
+          <button class="pageBtn" onclick="window.goToPrevPage()" id="btnPrev">‹ Sebelumnya</button>
+          <button class="pageBtn" onclick="window.goToNextPage()" id="btnNext">Berikutnya ›</button>
         </div>
       </div>
     </div>
@@ -474,7 +506,68 @@
 
     <!-- ===== VIEW: DASHBOARD KINERJA ===== -->
     <div id="viewDashboard" style="display:none;"></div>
+
+    <!-- ===== VIEW: MANAJEMEN USER (admin) ===== -->
+    <div id="viewUsers" style="display:none;">
+      <div class="toolbar">
+        <div></div>
+        <button class="btn btn-primary" onclick="window.openUserModal()">+ Tambah User Langsung</button>
+      </div>
+
+      <div class="dashSection" id="pendingSection" style="display:none;">
+        <h3>Menunggu Persetujuan</h3>
+        <div class="tableWrap">
+          <table>
+            <thead><tr><th>Nama</th><th>Email</th><th>Tetapkan Role</th><th></th></tr></thead>
+            <tbody id="pendingTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="dashSection">
+        <h3>User Aktif</h3>
+        <div class="tableWrap">
+          <table>
+            <thead><tr><th>Nama</th><th>Email</th><th>Role</th><th></th></tr></thead>
+            <tbody id="usersTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   </main>
+</div>
+
+<!-- ===================== MODAL: TAMBAH USER ===================== -->
+<div class="modalOverlay" id="userModal">
+  <div class="modalBox">
+    <h2>Tambah User Baru</h2>
+    <div class="field">
+      <label>Nama</label>
+      <input type="text" id="fUserNama">
+    </div>
+    <div class="field">
+      <label>Email</label>
+      <input type="email" id="fUserEmail">
+    </div>
+    <div class="field">
+      <label>Password Awal</label>
+      <input type="text" id="fUserPassword" placeholder="minimal 6 karakter">
+      <div class="hint">Sampaikan password ini ke user secara terpisah — belum ada fitur reset password sendiri di MVP ini.</div>
+    </div>
+    <div class="field">
+      <label>Role</label>
+      <select id="fUserRole">
+        <option value="planner">Planner</option>
+        <option value="manager">Manager</option>
+        <option value="admin">Admin</option>
+      </select>
+    </div>
+    <div class="errMsg" id="userModalErr"></div>
+    <div class="modalFooter">
+      <button class="btn btn-ghost" onclick="window.closeUserModal()">Batal</button>
+      <button class="btn btn-primary" onclick="window.saveNewUser()">Buat User</button>
+    </div>
+  </div>
 </div>
 
 <!-- ===================== MODAL: TAMBAH / EDIT ===================== -->
@@ -529,14 +622,14 @@
         <input type="text" id="fPic" placeholder="Nama planner">
       </div>
       <div class="field">
-        <label>Target Selesai <span class="hint" style="display:inline;">(radar keterlambatan progress)</span></label>
+        <label>Target Selesai</label>
         <input type="date" id="fTarget">
         <div class="hint" id="targetEditHint"></div>
       </div>
     </div>
 
     <div class="field">
-      <label>Effective Date / Tanggal Habis Kontrak <span class="hint" style="display:inline;">(khusus kontrak berjalan — radar perpanjangan)</span></label>
+      <label>Effective Date / Tanggal Habis Kontrak <span class="hint" style="display:inline;">(khusus kontrak berjalan)</span></label>
       <input type="date" id="fEffective">
     </div>
 
@@ -555,7 +648,7 @@
     <div id="stageChecklist"></div>
 
     <div class="field" style="margin-top:14px;">
-      <label>Catatan Progress <span class="hint" style="display:inline;">(status terkini dalam kalimat singkat)</span></label>
+      <label>Catatan Progress</label>
       <input type="text" id="fProgressNote" placeholder="mis. Pembuatan Lingkup dan OE / Waiting Delivery / Close PO">
     </div>
 
@@ -576,12 +669,12 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
-  getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged
+  getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
-  getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc,
+  getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc, setDoc,
   deleteDoc, onSnapshot, serverTimestamp, query, orderBy, writeBatch
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -638,6 +731,7 @@ let allItems = [];
 let unsubItems = null;
 let currentPage = 1;
 let pageSize = 20;
+let suppressAuthCheck = false; // cegah race condition saat proses registrasi
 
 // ---------------------------------------------------------------------
 // Show/hide field "Lainnya" untuk kategori & jenis kontrak
@@ -703,6 +797,54 @@ function getStagesFromForm(){
 // ---------------------------------------------------------------------
 // AUTH
 // ---------------------------------------------------------------------
+window.toggleRegister = function(showRegister){
+  document.getElementById("loginErr").textContent = "";
+  document.getElementById("registerErr").textContent = "";
+  document.getElementById("loginBoxMain").style.display = showRegister ? "none" : "block";
+  document.getElementById("registerBox").style.display = showRegister ? "block" : "none";
+};
+
+window.doRegister = async function(){
+  const nama = document.getElementById("regNama").value.trim();
+  const email = document.getElementById("regEmail").value.trim();
+  const pass = document.getElementById("regPass").value;
+  const errEl = document.getElementById("registerErr");
+  errEl.textContent = "";
+
+  if(!nama || !email || !pass){
+    errEl.textContent = "Semua field wajib diisi.";
+    return;
+  }
+  if(pass.length < 6){
+    errEl.textContent = "Password minimal 6 karakter.";
+    return;
+  }
+
+  try{
+    suppressAuthCheck = true;
+    const cred = await createUserWithEmailAndPassword(auth, email, pass);
+    await setDoc(doc(db, "users", cred.user.uid), {
+      nama, email, role: "pending", createdAt: serverTimestamp()
+    });
+    await signOut(auth);
+    window.toggleRegister(false);
+    document.getElementById("loginErr").textContent =
+      "Pendaftaran berhasil. Akun Anda menunggu persetujuan admin sebelum bisa dipakai.";
+  }catch(e){
+    if(e.code === "auth/email-already-in-use"){
+      errEl.textContent = "Email ini sudah terdaftar.";
+    } else if(e.code === "auth/weak-password"){
+      errEl.textContent = "Password terlalu lemah.";
+    } else {
+      errEl.textContent = "Gagal mendaftar. Coba lagi.";
+    }
+    console.error(e);
+    try{ await signOut(auth); }catch(_){}
+  }finally{
+    suppressAuthCheck = false;
+  }
+};
+
 window.doLogin = async function(){
   const email = document.getElementById("loginEmail").value.trim();
   const pass = document.getElementById("loginPass").value;
@@ -724,6 +866,7 @@ window.doLogout = async function(){
 };
 
 onAuthStateChanged(auth, async (user) => {
+  if(suppressAuthCheck) return; // sedang dalam proses registrasi, ditangani doRegister sendiri
   if(user){
     currentUser = user;
     const uSnap = await getDoc(doc(db, "users", user.uid));
@@ -737,12 +880,24 @@ onAuthStateChanged(auth, async (user) => {
     currentRole = uData.role || "planner";
     currentName = uData.nama || user.email;
 
+    if(!["planner","manager","admin"].includes(currentRole)){
+      const msg = currentRole === "pending"
+        ? "Pendaftaran Anda berhasil, tapi masih menunggu persetujuan admin."
+        : "Akun Anda dinonaktifkan atau belum diberi akses. Hubungi admin.";
+      window.toggleRegister(false);
+      document.getElementById("loginErr").textContent = msg;
+      await signOut(auth);
+      return;
+    }
+
     document.getElementById("loginScreen").style.display = "none";
     document.getElementById("appScreen").style.display = "block";
     document.getElementById("whoName").textContent = currentName;
     document.getElementById("whoRole").textContent = currentRole;
-    document.getElementById("btnAdd").style.display = currentRole === "planner" ? "inline-flex" : "none";
-    document.getElementById("btnImport").style.display = currentRole === "planner" ? "inline-flex" : "none";
+    const canWrite = currentRole === "planner" || currentRole === "admin";
+    document.getElementById("btnAdd").style.display = canWrite ? "inline-flex" : "none";
+    document.getElementById("btnImport").style.display = canWrite ? "inline-flex" : "none";
+    document.getElementById("tabUsers").style.display = currentRole === "admin" ? "inline-block" : "none";
 
     listenItems();
   } else {
@@ -806,15 +961,209 @@ function populatePlannerFilter(){
 // VIEW SWITCHING
 // ---------------------------------------------------------------------
 window.switchView = function(view){
-  const isList = view === "list";
-  document.getElementById("viewList").style.display = isList ? "block" : "none";
-  document.getElementById("viewDashboard").style.display = isList ? "none" : "block";
-  document.getElementById("tabList").classList.toggle("active", isList);
-  document.getElementById("tabDash").classList.toggle("active", !isList);
-  if(!isList) renderDashboard();
+  document.getElementById("viewList").style.display = view === "list" ? "block" : "none";
+  document.getElementById("viewDashboard").style.display = view === "dashboard" ? "block" : "none";
+  document.getElementById("viewUsers").style.display = view === "users" ? "block" : "none";
+  document.getElementById("tabList").classList.toggle("active", view === "list");
+  document.getElementById("tabDash").classList.toggle("active", view === "dashboard");
+  document.getElementById("tabUsers").classList.toggle("active", view === "users");
+  if(view === "dashboard") renderDashboard();
+  if(view === "users") loadUsersPanel();
 };
 
-function escapeHtmlAttr(str){ return escapeHtml(str); }
+// ---------------------------------------------------------------------
+// MANAJEMEN USER (khusus admin)
+// ---------------------------------------------------------------------
+async function loadUsersPanel(){
+  const pendingBody = document.getElementById("pendingTableBody");
+  const activeBody = document.getElementById("usersTableBody");
+  const pendingSection = document.getElementById("pendingSection");
+  activeBody.innerHTML = `<tr><td colspan="4">Memuat...</td></tr>`;
+  try{
+    const snap = await getDocs(collection(db, "users"));
+    const users = [];
+    snap.forEach(d => users.push({ id: d.id, ...d.data() }));
+    users.sort((a,b) => (a.nama||"").localeCompare(b.nama||""));
+
+    const pending = users.filter(u => u.role === "pending");
+    const active = users.filter(u => u.role !== "pending");
+
+    pendingSection.style.display = pending.length > 0 ? "block" : "none";
+    pendingBody.innerHTML = pending.map(u => `
+      <tr>
+        <td>${escapeHtml(u.nama || "—")}</td>
+        <td>${escapeHtml(u.email || "—")}</td>
+        <td>
+          <select id="approveRole_${u.id}">
+            <option value="planner">Planner</option>
+            <option value="manager">Manager</option>
+            <option value="admin">Admin</option>
+          </select>
+        </td>
+        <td>
+          <div class="rowActions">
+            <button class="iconbtn" onclick='window.approveUser(${JSON.stringify(u.id)})'>Setujui</button>
+            <button class="iconbtn" style="color:var(--red);" onclick='window.rejectUser(${JSON.stringify(u.id)})'>Tolak</button>
+          </div>
+        </td>
+      </tr>
+    `).join("");
+
+    if(active.length === 0){
+      activeBody.innerHTML = `<tr><td colspan="4">Belum ada user aktif.</td></tr>`;
+      return;
+    }
+
+    activeBody.innerHTML = active.map(u => `
+      <tr>
+        <td>${escapeHtml(u.nama || "—")}</td>
+        <td>${escapeHtml(u.email || "—")}</td>
+        <td>
+          <select onchange="window.changeUserRole(${JSON.stringify(u.id)}, this.value)" ${u.id === currentUser.uid ? "disabled" : ""}>
+            <option value="planner" ${u.role==="planner"?"selected":""}>Planner</option>
+            <option value="manager" ${u.role==="manager"?"selected":""}>Manager</option>
+            <option value="admin" ${u.role==="admin"?"selected":""}>Admin</option>
+            <option value="disabled" ${u.role==="disabled"?"selected":""}>Nonaktif</option>
+          </select>
+        </td>
+        <td>
+          ${u.id === currentUser.uid
+            ? `<span class="hint" style="display:inline;">Akun Anda</span>`
+            : `<button class="iconbtn" style="color:var(--red);" onclick='window.deleteUserProfile(${JSON.stringify(u.id)})'>Hapus</button>`}
+        </td>
+      </tr>
+    `).join("");
+  }catch(e){
+    activeBody.innerHTML = `<tr><td colspan="4">Gagal memuat data user.</td></tr>`;
+    console.error(e);
+  }
+}
+
+window.approveUser = async function(uid){
+  const role = document.getElementById(`approveRole_${uid}`).value;
+  try{
+    await updateDoc(doc(db, "users", uid), { role, approvedBy: currentName, approvedAt: serverTimestamp() });
+    loadUsersPanel();
+  }catch(e){
+    alert("Gagal menyetujui user.");
+    console.error(e);
+  }
+};
+
+window.rejectUser = async function(uid){
+  if(!confirm(
+    "Tolak pendaftaran ini?\n\n" +
+    "Catatan: ini hanya menghapus profil di sistem (akses ke app hilang total). " +
+    "Akun login Firebase-nya sendiri TIDAK ikut terhapus otomatis " +
+    "(keterbatasan teknis) — kalau perlu dihapus total, hapus manual dari " +
+    "Firebase Console > Authentication."
+  )) return;
+  try{
+    await deleteDoc(doc(db, "users", uid));
+    loadUsersPanel();
+  }catch(e){
+    alert("Gagal menolak user.");
+    console.error(e);
+  }
+};
+
+window.deleteUserProfile = async function(uid){
+  if(!confirm(
+    "Hapus user ini dari sistem?\n\n" +
+    "Catatan: akun login Firebase-nya TIDAK ikut terhapus otomatis " +
+    "(keterbatasan teknis client-side) — orang ini tidak akan bisa lagi " +
+    "membuka app (dianggap tanpa role), tapi kalau perlu dihapus total dari " +
+    "Firebase, lakukan manual di Console > Authentication."
+  )) return;
+  try{
+    await deleteDoc(doc(db, "users", uid));
+    loadUsersPanel();
+  }catch(e){
+    alert("Gagal menghapus user.");
+    console.error(e);
+  }
+};
+
+window.changeUserRole = async function(uid, newRole){
+  try{
+    await updateDoc(doc(db, "users", uid), { role: newRole, updatedAt: serverTimestamp() });
+  }catch(e){
+    alert("Gagal mengubah role. Periksa hak akses.");
+    console.error(e);
+  }
+};
+
+window.openUserModal = function(){
+  document.getElementById("fUserNama").value = "";
+  document.getElementById("fUserEmail").value = "";
+  document.getElementById("fUserPassword").value = "";
+  document.getElementById("fUserRole").value = "planner";
+  document.getElementById("userModalErr").textContent = "";
+  document.getElementById("userModal").classList.add("show");
+};
+window.closeUserModal = function(){
+  document.getElementById("userModal").classList.remove("show");
+};
+
+window.saveNewUser = async function(){
+  const nama = document.getElementById("fUserNama").value.trim();
+  const email = document.getElementById("fUserEmail").value.trim();
+  const password = document.getElementById("fUserPassword").value;
+  const role = document.getElementById("fUserRole").value;
+  const errEl = document.getElementById("userModalErr");
+  errEl.textContent = "";
+
+  if(!nama || !email || !password){
+    errEl.textContent = "Semua field wajib diisi.";
+    return;
+  }
+  if(password.length < 6){
+    errEl.textContent = "Password minimal 6 karakter.";
+    return;
+  }
+
+  // Pakai instance Firebase app KEDUA supaya sesi login admin tidak ikut
+  // tergantikan oleh akun baru yang baru dibuat (perilaku default Firebase Auth).
+  let secondaryApp;
+  try{
+    secondaryApp = initializeApp(firebaseConfig, "UserCreation-" + Date.now());
+    const secondaryAuth = getAuth(secondaryApp);
+    const cred = await createUserWithEmailAndPassword(secondaryAuth, email, password);
+    const newUid = cred.user.uid;
+
+    await setDoc(doc(db, "users", newUid), { nama, email, role, createdAt: serverTimestamp(), createdBy: currentName });
+
+    await signOut(secondaryAuth);
+    await deleteApp(secondaryApp);
+
+    window.closeUserModal();
+    loadUsersPanel();
+  }catch(e){
+    console.error(e);
+    if(e.code === "auth/email-already-in-use"){
+      errEl.textContent = "Email ini sudah terdaftar.";
+    } else {
+      errEl.textContent = "Gagal membuat user: " + (e.message || "kesalahan tidak diketahui");
+    }
+    if(secondaryApp){ try{ await deleteApp(secondaryApp); }catch(_){} }
+  }
+};
+
+window.goFilterKategori = function(k){
+  document.getElementById("filterKategori").value = k;
+  window.switchView('list');
+  window.onFilterChange();
+};
+window.goFilterPlanner = function(p){
+  document.getElementById("filterPlanner").value = p;
+  window.switchView('list');
+  window.onFilterChange();
+};
+window.goFilterSignal = function(sig){
+  document.getElementById("filterSignal").value = sig;
+  window.switchView('list');
+  window.onFilterChange();
+};
 
 // ---------------------------------------------------------------------
 // RENDER: DASHBOARD KINERJA
@@ -833,11 +1182,11 @@ function renderDashboard(){
     <div class="dashSection">
       <h3>Kesehatan Project (Kondisi Saat Ini)</h3>
       <div class="summaryRow">
-        <div class="sumCard"><div class="num mono">${total}</div><div class="lbl">Total Pekerjaan</div></div>
-        <div class="sumCard"><div class="num mono">${doneCount}</div><div class="lbl">Selesai (100%)</div></div>
-        <div class="sumCard"><div class="num mono">${berjalanCount}</div><div class="lbl">Sedang Berjalan</div></div>
-        <div class="sumCard overdue"><div class="num mono">${overdueCount}</div><div class="lbl">Progress Terlambat</div></div>
-        <div class="sumCard overdue"><div class="num mono">${expiringCount}</div><div class="lbl">Kontrak Mendekati Habis</div></div>
+        <div class="sumCard" onclick="window.goFilterSignal('')"><div class="num mono">${total}</div><div class="lbl">Total Pekerjaan</div></div>
+        <div class="sumCard" onclick="window.goFilterSignal('done')"><div class="num mono">${doneCount}</div><div class="lbl">Selesai (100%)</div></div>
+        <div class="sumCard" onclick="window.goFilterSignal('berjalan')"><div class="num mono">${berjalanCount}</div><div class="lbl">Sedang Berjalan</div></div>
+        <div class="sumCard overdue" onclick="window.goFilterSignal('overdue')"><div class="num mono">${overdueCount}</div><div class="lbl">Progress Terlambat</div></div>
+        <div class="sumCard overdue" onclick="window.goFilterSignal('expiring')"><div class="num mono">${expiringCount}</div><div class="lbl">Kontrak Mendekati Habis</div></div>
       </div>
     </div>
 
@@ -885,7 +1234,7 @@ function renderCategoryBars(){
     const avgProgress = Math.round(c.sumProgress / c.count);
     const widthPct = Math.max(4, Math.round((c.count / maxCount) * 100));
     return `
-      <div class="barChartRow">
+      <div class="barChartRow" onclick='window.goFilterKategori(${JSON.stringify(k)})'>
         <div class="bcLabel">${escapeHtml(k)}</div>
         <div class="bcTrack"><div class="bcFill" style="width:${widthPct}%"></div></div>
         <div class="bcMeta">
@@ -918,7 +1267,7 @@ function renderPlannerBars(){
     const d = planners[p];
     const avgProgress = Math.round(d.sumProgress / d.count);
     return `
-      <div class="barChartRow">
+      <div class="barChartRow" onclick='window.goFilterPlanner(${JSON.stringify(p)})'>
         <div class="bcLabel">${escapeHtml(p)}</div>
         <div class="bcTrack"><div class="bcFill" style="width:${avgProgress}%"></div></div>
         <div class="bcMeta">
@@ -941,7 +1290,7 @@ function renderMyPerformance(){
   const overdueListHtml = overdue.length === 0
     ? `<div class="hint">Tidak ada pekerjaan yang terlambat dari target. Baik.</div>`
     : `<div class="myOverdueList">${overdue.map(i => `
-        <div class="moItem">
+        <div class="moItem" style="cursor:pointer;" onclick='window.switchView("list");window.openEditModal(${JSON.stringify(i.id)})'>
           <span>${escapeHtml(i.namaPekerjaan)}</span>
           <span class="moDate">Target: ${fmtDate(i.targetSelesai)}</span>
         </div>
@@ -982,6 +1331,8 @@ window.goToPage = function(page){
   currentPage = page;
   window.renderTable();
 };
+window.goToPrevPage = function(){ window.goToPage(currentPage - 1); };
+window.goToNextPage = function(){ window.goToPage(currentPage + 1); };
 
 window.onPageSizeChange = function(){
   pageSize = parseInt(document.getElementById("pageSizeSelect").value, 10);
@@ -1000,6 +1351,7 @@ window.renderTable = function(){
   if(fSignal === "overdue") items = items.filter(isProgressOverdue);
   if(fSignal === "expiring") items = items.filter(isExpiringSoon);
   if(fSignal === "done") items = items.filter(i => getTotalProgress(i) >= 100);
+  if(fSignal === "berjalan") items = items.filter(i => getTotalProgress(i) < 100);
 
   const tbody = document.getElementById("tableBody");
   const emptyState = document.getElementById("emptyState");
@@ -1159,12 +1511,13 @@ window.openEditModal = function(id){
   const hint = document.getElementById("targetEditHint");
   hint.textContent = item.targetLastEditedBy ? `Terakhir diubah oleh ${item.targetLastEditedBy}` : "";
 
-  document.getElementById("btnDelete").style.display = currentRole === "planner" ? "inline-flex" : "none";
+  document.getElementById("btnDelete").style.display = (currentRole === "planner" || currentRole === "admin") ? "inline-flex" : "none";
   setFieldPermissions(true);
   document.getElementById("itemModal").classList.add("show");
 };
 
 // Manager: hanya field targetSelesai yang bisa diedit. Field lain read-only.
+// Planner & Admin: bebas edit semua field.
 function setFieldPermissions(isEdit){
   const managerOnly = currentRole === "manager" && isEdit;
   const fields = ["fNama","fKategori","fKategoriLainnya","fContractType","fContractTypeLainnya",
