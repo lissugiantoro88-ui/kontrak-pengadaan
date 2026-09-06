@@ -878,8 +878,8 @@ let suppressAuthCheck = false; // cegah race condition saat proses registrasi
 let presenceHeartbeatTimer = null;
 let presenceWatchTimer = null;
 let unsubPresence = null;
-const PRESENCE_HEARTBEAT_SEC = 25;
-const PRESENCE_ONLINE_THRESHOLD_SEC = 45; // dianggap offline kalau lebih lama dari ini tanpa heartbeat
+const PRESENCE_HEARTBEAT_SEC = 60;
+const PRESENCE_ONLINE_THRESHOLD_SEC = 90; // dianggap offline kalau lebih lama dari ini tanpa heartbeat
 let idleTimer = null;
 const IDLE_TIMEOUT_MS = 10 * 60 * 1000; // 10 menit tanpa aktivitas → auto logout
 const IDLE_EVENTS = ["mousemove", "mousedown", "keydown", "scroll", "touchstart", "click"];
@@ -1343,45 +1343,51 @@ function stopPresenceHeartbeat(){
   if(presenceHeartbeatTimer){ clearInterval(presenceHeartbeatTimer); presenceHeartbeatTimer = null; }
 }
 
+// Cache lokal dari onSnapshot — dipakai ulang oleh timer staleness-check
+// supaya TIDAK perlu getDocs() lagi ke server tiap kali. Hemat kuota baca
+// signifikan (sebelumnya: full re-fetch tiap 10 detik selama admin buka tab
+// ini, terlepas ada perubahan data atau tidak).
+let cachedPresenceDocs = [];
+
 function startPresenceWatch(){
   if(currentRole !== "admin") return;
   if(unsubPresence) return; // sudah jalan
-  unsubPresence = onSnapshot(collection(db, "presence"), () => renderPresencePanel());
-  presenceWatchTimer = setInterval(renderPresencePanel, 10000); // re-evaluasi staleness tiap 10s
+  unsubPresence = onSnapshot(collection(db, "presence"), (snap) => {
+    cachedPresenceDocs = [];
+    snap.forEach(d => cachedPresenceDocs.push(d.data()));
+    renderPresencePanel();
+  });
+  // Timer ini TIDAK baca ke server — cuma re-evaluasi "siapa masih online"
+  // dari cache lokal terhadap waktu sekarang (karena heartbeat yang sudah
+  // basi tidak akan memicu onSnapshot baru dengan sendirinya).
+  presenceWatchTimer = setInterval(renderPresencePanel, 10000);
 }
 function stopPresenceWatch(){
   if(unsubPresence){ unsubPresence(); unsubPresence = null; }
   if(presenceWatchTimer){ clearInterval(presenceWatchTimer); presenceWatchTimer = null; }
 }
 
-async function renderPresencePanel(){
+function renderPresencePanel(){
   const el = document.getElementById("presenceCard");
   if(!el) return;
-  try{
-    const snap = await getDocs(collection(db, "presence"));
-    const nowSec = Date.now() / 1000;
-    const online = [];
-    snap.forEach(d => {
-      const data = d.data();
-      if(!data.lastActive || !data.lastActive.seconds) return;
-      if(nowSec - data.lastActive.seconds <= PRESENCE_ONLINE_THRESHOLD_SEC){
-        online.push(data.nama || "(tanpa nama)");
-      }
-    });
-    el.innerHTML = `
-      <div class="presenceHeader">
-        <span class="dot-live"></span>
-        <span>Sedang Online: <span class="count">${online.length}</span></span>
-      </div>
-      <div class="presenceList">
-        ${online.length === 0 ? `<span class="hint">Tidak ada yang online saat ini.</span>` :
-          online.map(n => `<span class="presenceChip"><span class="dot-live"></span>${escapeHtml(n)}</span>`).join("")}
-      </div>
-    `;
-  }catch(e){
-    el.innerHTML = `<div class="hint">Gagal memuat status online.</div>`;
-    console.error(e);
-  }
+  const nowSec = Date.now() / 1000;
+  const online = [];
+  cachedPresenceDocs.forEach(data => {
+    if(!data.lastActive || !data.lastActive.seconds) return;
+    if(nowSec - data.lastActive.seconds <= PRESENCE_ONLINE_THRESHOLD_SEC){
+      online.push(data.nama || "(tanpa nama)");
+    }
+  });
+  el.innerHTML = `
+    <div class="presenceHeader">
+      <span class="dot-live"></span>
+      <span>Sedang Online: <span class="count">${online.length}</span></span>
+    </div>
+    <div class="presenceList">
+      ${online.length === 0 ? `<span class="hint">Tidak ada yang online saat ini.</span>` :
+        online.map(n => `<span class="presenceChip"><span class="dot-live"></span>${escapeHtml(n)}</span>`).join("")}
+    </div>
+  `;
 }
 
 async function loadUsersPanel(){
@@ -1512,10 +1518,14 @@ window.deleteUserProfile = async function(uid){
     "Catatan: akun login Firebase-nya TIDAK ikut terhapus otomatis " +
     "(keterbatasan teknis client-side) — orang ini tidak akan bisa lagi " +
     "membuka app (dianggap tanpa role), tapi kalau perlu dihapus total dari " +
-    "Firebase, lakukan manual di Console > Authentication."
+    "Firebase, lakukan manual di Console > Authentication.\n\n" +
+    "Catatan lain: kalau orang ini masih punya tab browser terbuka dengan " +
+    "sesi aktif, status 'online' bisa sempat muncul lagi sampai sesinya " +
+    "benar-benar berakhir sendiri (di luar kendali app ini)."
   )) return;
   try{
     await deleteDoc(doc(db, "users", uid));
+    await deleteDoc(doc(db, "presence", uid)).catch(() => {}); // presence mungkin tidak ada, abaikan kalau gagal
     loadUsersPanel();
   }catch(e){
     alert("Gagal menghapus user.");
@@ -2196,6 +2206,7 @@ window.renderTable = function(){
       <tr class="${overdue ? 'rowOverdue' : ''}">
         <td>
           <div class="jobname">${escapeHtml(item.namaPekerjaan)}${relativeUpdateBadge(item)}${isStuck(item) ? `<span class="stuckBadge">${getAgeDays(item)} Hari Tanpa Progress</span>` : ""}</div>
+          ${item.sumberKebutuhan ? `<div class="jobsrc">Sumber: ${escapeHtml(item.sumberKebutuhan)}</div>` : ""}
           ${item.progressNote ? `<div class="progNote">${escapeHtml(item.progressNote)}</div>` : ""}
         </td>
         <td><span class="pill ${pillClass}">${escapeHtml(item.kategori || "—")}</span></td>
