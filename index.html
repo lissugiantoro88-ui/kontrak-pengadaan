@@ -305,6 +305,9 @@
     font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);
     background:#F0F0EE;padding:2px 6px;border-radius:4px;
   }
+  .stageRow.stageRowDisabled{opacity:0.4;transition:opacity .2s;}
+  .stageRow.stageRowDisabled input[type=checkbox],
+  .stageRow.stageRowDisabled label{cursor:not-allowed;}
   .progressSummary{
     display:flex;align-items:center;justify-content:space-between;
     background:var(--accent-soft);border-radius:8px;padding:10px 14px;margin-bottom:16px;
@@ -692,14 +695,41 @@
 
     <!-- ===== VIEW: LOG AKTIVITAS (admin only) ===== -->
     <div id="viewLog" style="display:none;">
-      <div class="hint" style="margin-bottom:14px;">Menampilkan 200 aktivitas terakhir. Log ini permanen — tidak bisa diubah atau dihapus oleh siapa pun, termasuk admin (demi integritas audit trail).</div>
+      <div class="hint" style="margin-bottom:14px;">Log dibatasi menampilkan maksimal 200 entri terbaru untuk pencarian/tampilan. Tombol "Hapus Semua" tetap menghapus SELURUH riwayat, tidak cuma yang tampil.</div>
+
+      <div class="toolbar">
+        <div class="filters">
+          <input type="text" id="logSearchKeyword" placeholder="Cari pekerjaan, aksi, atau nama..." oninput="window.onLogFilterChange()" style="padding:7px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;font-family:inherit;min-width:220px;">
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-ghost" id="btnDeleteSelectedLog" onclick="window.deleteSelectedLogs()" style="display:none;color:var(--red);border-color:var(--red-soft);">Hapus Terpilih</button>
+          <button class="btn btn-ghost" onclick="window.deleteAllLogs()" style="color:var(--red);border-color:var(--red-soft);">Hapus Semua</button>
+        </div>
+      </div>
+
       <div class="tableWrap">
         <table>
           <thead>
-            <tr><th>Waktu</th><th>Pekerjaan</th><th>Aksi</th><th>Perubahan</th><th>Oleh</th></tr>
+            <tr>
+              <th style="width:34px;"><input type="checkbox" id="logSelectAll" onchange="window.toggleSelectAllLogs(this)"></th>
+              <th>Waktu</th><th>Pekerjaan</th><th>Aksi</th><th>Perubahan</th><th>Oleh</th>
+            </tr>
           </thead>
           <tbody id="logTableBody"></tbody>
         </table>
+        <div class="paginationBar" id="logPaginationBar" style="display:none;">
+          <div class="pageInfo" id="logPageInfo"></div>
+          <div class="pageControls">
+            <select id="logPageSizeSelect" onchange="window.onLogPageSizeChange()">
+              <option value="20" selected>20 / halaman</option>
+              <option value="50">50 / halaman</option>
+              <option value="100">100 / halaman</option>
+            </select>
+            <button class="pageBtn" onclick="window.goToLogPage(1)" id="logBtnFirst">« Awal</button>
+            <button class="pageBtn" onclick="window.goToLogPrevPage()" id="logBtnPrev">‹ Sebelumnya</button>
+            <button class="pageBtn" onclick="window.goToLogNextPage()" id="logBtnNext">Berikutnya ›</button>
+          </div>
+        </div>
       </div>
     </div>
   </main>
@@ -1050,7 +1080,7 @@ function renderStageChecklist(savedStages){
     STAGE_TEMPLATE.filter(s => s.group === group).forEach(s => {
       const checked = stages[s.key] ? "checked" : "";
       html += `
-        <div class="stageRow">
+        <div class="stageRow" data-key="${s.key}">
           <input type="checkbox" id="stage_${s.key}" data-weight="${s.weight}" ${checked} onchange="window.updateProgressPreview()">
           <label for="stage_${s.key}">${s.label}</label>
           <span class="weight">${s.weight} poin</span>
@@ -1060,6 +1090,29 @@ function renderStageChecklist(savedStages){
   });
   container.innerHTML = html;
   window.updateProgressPreview();
+}
+
+// ---------------------------------------------------------------------
+// GATING: "Proses Tender" terkunci sampai "Pengiriman Berkas ke
+// Procurement" dicentang — mencerminkan urutan kerja sesungguhnya
+// (tidak bisa mulai proses tender sebelum berkas dikirim ke Procurement).
+// Elemen TETAP ada di DOM (tidak disembunyikan/dimunculkan ulang), cuma
+// dikunci (disabled + redup) atau dibuka sesuai status prasyaratnya.
+// ---------------------------------------------------------------------
+const GATE_KEY = "berkasProcurement";
+const GATED_KEYS = ["preBid", "evaluasiNegosiasi", "lhp", "penetapanPemenang", "kontrakPO"];
+
+function applyStageGating(){
+  const gateEl = document.getElementById(`stage_${GATE_KEY}`);
+  const gateOn = !!(gateEl && gateEl.checked);
+  GATED_KEYS.forEach(key => {
+    const el = document.getElementById(`stage_${key}`);
+    if(!el) return;
+    el.disabled = !gateOn;
+    if(!gateOn) el.checked = false; // prasyarat dicabut → reset, jangan biarkan progress "nyangkut"
+    const row = el.closest(".stageRow");
+    if(row) row.classList.toggle("stageRowDisabled", !gateOn);
+  });
 }
 
 function calcTotalProgress(){
@@ -1072,6 +1125,7 @@ function calcTotalProgress(){
 }
 
 window.updateProgressPreview = function(){
+  applyStageGating();
   const total = calcTotalProgress();
   const el = document.getElementById("pctBigDisplay");
   el.textContent = total + "%";
@@ -1527,38 +1581,139 @@ function buildChangeSummary(oldItem, newPayload){
   return parts.length ? parts.join(" · ") : "Tidak ada perubahan terdeteksi";
 }
 
+let allLogEntries = []; // cache lokal hasil fetch, dipakai search+pagination di sisi browser
+let logCurrentPage = 1;
+let logPageSize = 20;
+
 async function loadActivityLog(){
   const tbody = document.getElementById("logTableBody");
-  tbody.innerHTML = `<tr><td colspan="5">Memuat...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="6">Memuat...</td></tr>`;
   try{
     const q = query(collection(db, "activity_log"), orderBy("changedAt", "desc"), limit(200));
     const snap = await getDocs(q);
-    if(snap.empty){
-      tbody.innerHTML = `<tr><td colspan="5">Belum ada aktivitas tercatat.</td></tr>`;
-      return;
-    }
-    const rows = [];
-    snap.forEach(d => {
-      const l = d.data();
-      const waktu = l.changedAt && l.changedAt.seconds
-        ? new Date(l.changedAt.seconds * 1000).toLocaleString('id-ID', {dateStyle:'short', timeStyle:'short'})
-        : "—";
-      rows.push(`
-        <tr>
-          <td class="mono" style="font-size:11.5px;">${waktu}</td>
-          <td>${escapeHtml(l.itemName || "—")}</td>
-          <td>${escapeHtml(l.action || "—")}</td>
-          <td style="font-size:12.5px;">${escapeHtml(l.changesSummary || "—")}</td>
-          <td>${escapeHtml(l.changedBy || "—")} <span class="hint" style="display:inline;">(${ROLE_LABELS[l.changedByRole] || l.changedByRole || "?"})</span></td>
-        </tr>
-      `);
-    });
-    tbody.innerHTML = rows.join("");
+    allLogEntries = [];
+    snap.forEach(d => allLogEntries.push({ id: d.id, ...d.data() }));
+    logCurrentPage = 1;
+    renderLogTable();
   }catch(e){
-    tbody.innerHTML = `<tr><td colspan="5">Gagal memuat log.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6">Gagal memuat log.</td></tr>`;
     console.error(e);
   }
 }
+
+function getFilteredLogEntries(){
+  const kw = (document.getElementById("logSearchKeyword").value || "").trim().toLowerCase();
+  if(!kw) return allLogEntries;
+  return allLogEntries.filter(l => {
+    const haystack = [l.itemName, l.action, l.changesSummary, l.changedBy].filter(Boolean).join(" ").toLowerCase();
+    return haystack.includes(kw);
+  });
+}
+
+window.onLogFilterChange = function(){
+  logCurrentPage = 1;
+  renderLogTable();
+};
+
+function renderLogTable(){
+  const tbody = document.getElementById("logTableBody");
+  const items = getFilteredLogEntries();
+
+  if(items.length === 0){
+    tbody.innerHTML = `<tr><td colspan="6">Tidak ada aktivitas yang cocok.</td></tr>`;
+    document.getElementById("logPaginationBar").style.display = "none";
+    document.getElementById("btnDeleteSelectedLog").style.display = "none";
+    return;
+  }
+
+  const totalPages = Math.max(1, Math.ceil(items.length / logPageSize));
+  if(logCurrentPage > totalPages) logCurrentPage = totalPages;
+  const startIdx = (logCurrentPage - 1) * logPageSize;
+  const pageItems = items.slice(startIdx, startIdx + logPageSize);
+
+  document.getElementById("logPaginationBar").style.display = "flex";
+  document.getElementById("logPageInfo").textContent =
+    `Menampilkan ${startIdx + 1}–${Math.min(startIdx + logPageSize, items.length)} dari ${items.length} aktivitas`;
+  document.getElementById("logBtnFirst").disabled = logCurrentPage <= 1;
+  document.getElementById("logBtnPrev").disabled = logCurrentPage <= 1;
+  document.getElementById("logBtnNext").disabled = logCurrentPage >= totalPages;
+
+  tbody.innerHTML = pageItems.map(l => {
+    const waktu = l.changedAt && l.changedAt.seconds
+      ? new Date(l.changedAt.seconds * 1000).toLocaleString('id-ID', {dateStyle:'short', timeStyle:'short'})
+      : "—";
+    return `
+      <tr>
+        <td><input type="checkbox" class="logRowCheckbox" value="${l.id}" onchange="window.onLogCheckboxChange()"></td>
+        <td class="mono" style="font-size:11.5px;">${waktu}</td>
+        <td>${escapeHtml(l.itemName || "—")}</td>
+        <td>${escapeHtml(l.action || "—")}</td>
+        <td style="font-size:12.5px;">${escapeHtml(l.changesSummary || "—")}</td>
+        <td>${escapeHtml(l.changedBy || "—")} <span class="hint" style="display:inline;">(${ROLE_LABELS[l.changedByRole] || l.changedByRole || "?"})</span></td>
+      </tr>
+    `;
+  }).join("");
+  document.getElementById("logSelectAll").checked = false;
+  window.onLogCheckboxChange();
+}
+
+window.goToLogPage = function(page){ logCurrentPage = page; renderLogTable(); };
+window.goToLogPrevPage = function(){ window.goToLogPage(logCurrentPage - 1); };
+window.goToLogNextPage = function(){ window.goToLogPage(logCurrentPage + 1); };
+window.onLogPageSizeChange = function(){
+  logPageSize = parseInt(document.getElementById("logPageSizeSelect").value, 10);
+  logCurrentPage = 1;
+  renderLogTable();
+};
+
+window.toggleSelectAllLogs = function(checkbox){
+  document.querySelectorAll(".logRowCheckbox").forEach(cb => { cb.checked = checkbox.checked; });
+  window.onLogCheckboxChange();
+};
+
+window.onLogCheckboxChange = function(){
+  const anyChecked = document.querySelectorAll(".logRowCheckbox:checked").length > 0;
+  document.getElementById("btnDeleteSelectedLog").style.display = anyChecked ? "inline-flex" : "none";
+};
+
+window.deleteSelectedLogs = async function(){
+  const ids = Array.from(document.querySelectorAll(".logRowCheckbox:checked")).map(cb => cb.value);
+  if(ids.length === 0) return;
+  if(!confirm(`Hapus ${ids.length} entri log terpilih? Tindakan ini tidak bisa dibatalkan.`)) return;
+  try{
+    const batch = writeBatch(db);
+    ids.forEach(id => batch.delete(doc(db, "activity_log", id)));
+    await batch.commit();
+    loadActivityLog();
+  }catch(e){
+    alert("Gagal menghapus log terpilih.\n\nDetail: " + (e.code || e.message || "tidak diketahui"));
+    console.error(e);
+  }
+};
+
+window.deleteAllLogs = async function(){
+  if(!confirm(
+    "Hapus SELURUH riwayat log aktivitas (bukan cuma yang tampil di layar)?\n\n" +
+    "Tindakan ini PERMANEN dan tidak bisa dibatalkan — semua jejak audit sebelum ini akan hilang total."
+  )) return;
+  if(!confirm("Konfirmasi sekali lagi: benar-benar hapus SEMUA log?")) return;
+  try{
+    // Hapus SELURUH collection, bukan cuma 200 yang sedang ditampilkan —
+    // perlu query terpisah tanpa limit, dipecah per batch (maks 450/batch).
+    const snap = await getDocs(collection(db, "activity_log"));
+    const allDocs = snap.docs;
+    const BATCH_SIZE = 450;
+    for(let i = 0; i < allDocs.length; i += BATCH_SIZE){
+      const batch = writeBatch(db);
+      allDocs.slice(i, i + BATCH_SIZE).forEach(d => batch.delete(d.ref));
+      await batch.commit();
+    }
+    loadActivityLog();
+  }catch(e){
+    alert("Gagal menghapus semua log.\n\nDetail: " + (e.code || e.message || "tidak diketahui"));
+    console.error(e);
+  }
+};
 
 // ---------------------------------------------------------------------
 // PRESENCE (online) — heartbeat berkala; dianggap offline kalau tidak
