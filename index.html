@@ -21,6 +21,8 @@
     --green-soft:#E9F3EE;
     --red:#B84A3E;
     --red-soft:#FBEAE8;
+    --status-gray:#9CA3AF;
+    --status-gray-soft:#EEF0F2;
     --radius:10px;
   }
   *{box-sizing:border-box;}
@@ -33,6 +35,33 @@
   }
   .mono{font-family:'IBM Plex Mono',monospace;}
   h1,h2,h3{font-family:'IBM Plex Sans',sans-serif;font-weight:600;margin:0;}
+
+  /* ===== STATUS OVERVIEW (legend 4-warna, digabung di tab Daftar Pekerjaan) ===== */
+  .statusOverviewCard{
+    background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:16px 18px;margin-bottom:16px;
+  }
+  .stackedBar{
+    display:flex;height:14px;border-radius:7px;overflow:hidden;margin-bottom:12px;
+    background:#EFEFEC;
+  }
+  .stackedBar .stackSeg{height:100%;transition:width .3s;}
+  .legendRow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+  .legendChip{
+    display:inline-flex;align-items:center;gap:6px;
+    padding:6px 12px;border-radius:20px;border:1px solid var(--line);background:#fff;
+    font-size:12.5px;cursor:pointer;font-family:inherit;
+  }
+  .legendChip:hover{background:#FAFAF8;border-color:var(--ink-soft);}
+  .legendChip .dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+  .legendChip b{font-family:'IBM Plex Mono',monospace;}
+  .legendChip.expiring{border-style:dashed;}
+  .dashDetailToggle{
+    display:inline-flex;align-items:center;gap:5px;
+    background:none;border:none;color:var(--accent);font-size:12.5px;font-family:inherit;
+    cursor:pointer;padding:0;margin-top:10px;
+  }
+  #dashDetailPanel{display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--line);}
 
   /* ===== LOGIN ===== */
   #loginScreen{
@@ -196,12 +225,24 @@
   .progTrack .zoneMarks span{border-right:1px solid rgba(255,255,255,0.6);}
   .progFill{
     position:absolute;top:0;left:0;height:100%;
-    background:var(--accent);border-radius:4px;
+    border-radius:4px;
     transition:width .2s;
   }
-  .progFill.done{background:var(--green);}
+  .progFill.status-belum{background:var(--status-gray);}
+  .progFill.status-progress{background:var(--green);}
+  .progFill.status-selesai{background:var(--accent);}
+  .progFill.status-overdue{background:var(--red);}
   .progPct{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;white-space:nowrap;min-width:32px;text-align:right;}
   .progNote{color:var(--ink-soft);font-size:11.5px;margin-top:2px;}
+
+  .statusTag{
+    display:inline-block;font-size:10px;padding:2px 8px;border-radius:10px;
+    font-weight:600;text-transform:uppercase;letter-spacing:.02em;white-space:nowrap;
+  }
+  .statusTag-belum{background:var(--status-gray-soft);color:#6B7280;}
+  .statusTag-progress{background:var(--green-soft);color:var(--green);}
+  .statusTag-selesai{background:var(--accent-soft);color:var(--accent);}
+  .statusTag-overdue{background:var(--red-soft);color:var(--red);}
 
   .pill{
     display:inline-block;
@@ -340,6 +381,23 @@
   .myOverdueList .moItem:last-child{border-bottom:none;}
   .myOverdueList .moDate{font-family:'IBM Plex Mono',monospace;color:var(--red);font-size:12px;}
 
+  /* ===== PRESENCE (online) — khusus admin ===== */
+  .presenceCard{
+    background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:14px 18px;margin-bottom:20px;
+  }
+  .presenceHeader{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+  .presenceHeader .dot-live{width:8px;height:8px;border-radius:50%;background:var(--green);
+    box-shadow:0 0 0 3px var(--green-soft);}
+  .presenceHeader .count{font-family:'IBM Plex Mono',monospace;font-weight:600;}
+  .presenceList{display:flex;flex-wrap:wrap;gap:8px;}
+  .presenceChip{
+    display:inline-flex;align-items:center;gap:6px;
+    background:var(--green-soft);color:var(--green);
+    padding:4px 10px;border-radius:16px;font-size:12px;font-weight:500;
+  }
+  .presenceChip .dot-live{background:var(--green);}
+
   /* ===== PAGINATION ===== */
   .paginationBar{
     display:flex;align-items:center;justify-content:space-between;
@@ -433,14 +491,16 @@
   </header>
 
   <main>
-    <div class="viewTabs">
+    <div class="viewTabs" id="viewTabsBar">
       <button class="viewTab active" id="tabList" onclick="window.switchView('list')">Daftar Pekerjaan</button>
-      <button class="viewTab" id="tabDash" onclick="window.switchView('dashboard')">Dashboard Kinerja</button>
       <button class="viewTab" id="tabUsers" style="display:none;" onclick="window.switchView('users')">Manajemen User</button>
     </div>
 
-    <!-- ===== VIEW: DAFTAR PEKERJAAN ===== -->
+    <!-- ===== VIEW: DAFTAR PEKERJAAN (+ ringkasan kinerja) ===== -->
     <div id="viewList">
+
+    <div class="statusOverviewCard" id="statusOverviewCard"></div>
+
     <div class="toolbar">
       <div class="filters">
         <select id="filterKategori" onchange="window.onFilterChange()">
@@ -456,11 +516,12 @@
           <option value="">Semua Planner</option>
         </select>
         <select id="filterSignal" onchange="window.onFilterChange()">
-          <option value="">Semua</option>
-          <option value="berjalan">Sedang Berjalan</option>
-          <option value="overdue">Progress Terlambat</option>
+          <option value="">Semua Status</option>
+          <option value="belum">Belum Dimulai</option>
+          <option value="progress">In Progress</option>
+          <option value="selesai">Selesai</option>
+          <option value="overdue">Overdue</option>
           <option value="expiring">Kontrak Mendekati Habis</option>
-          <option value="done">Sudah Selesai (100%)</option>
         </select>
       </div>
       <div style="display:flex;gap:8px;">
@@ -504,11 +565,10 @@
     </div>
     </div>
 
-    <!-- ===== VIEW: DASHBOARD KINERJA ===== -->
-    <div id="viewDashboard" style="display:none;"></div>
-
     <!-- ===== VIEW: MANAJEMEN USER (admin) ===== -->
     <div id="viewUsers" style="display:none;">
+      <div class="presenceCard" id="presenceCard"></div>
+
       <div class="toolbar">
         <div></div>
         <button class="btn btn-primary" onclick="window.openUserModal()">+ Tambah User Langsung</button>
@@ -732,6 +792,11 @@ let unsubItems = null;
 let currentPage = 1;
 let pageSize = 20;
 let suppressAuthCheck = false; // cegah race condition saat proses registrasi
+let presenceHeartbeatTimer = null;
+let presenceWatchTimer = null;
+let unsubPresence = null;
+const PRESENCE_HEARTBEAT_SEC = 25;
+const PRESENCE_ONLINE_THRESHOLD_SEC = 45; // dianggap offline kalau lebih lama dari ini tanpa heartbeat
 
 // ---------------------------------------------------------------------
 // Show/hide field "Lainnya" untuk kategori & jenis kontrak
@@ -862,6 +927,10 @@ window.doLogin = async function(){
 };
 
 window.doLogout = async function(){
+  stopPresenceHeartbeat();
+  if(currentUser){
+    try{ await deleteDoc(doc(db, "presence", currentUser.uid)); }catch(_){}
+  }
   await signOut(auth);
 };
 
@@ -898,11 +967,15 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById("btnAdd").style.display = canWrite ? "inline-flex" : "none";
     document.getElementById("btnImport").style.display = canWrite ? "inline-flex" : "none";
     document.getElementById("tabUsers").style.display = currentRole === "admin" ? "inline-block" : "none";
+    document.getElementById("viewTabsBar").style.display = currentRole === "admin" ? "flex" : "none";
 
+    startPresenceHeartbeat();
     listenItems();
   } else {
     currentUser = null;
     currentRole = null;
+    stopPresenceHeartbeat();
+    stopPresenceWatch();
     document.getElementById("loginScreen").style.display = "flex";
     document.getElementById("appScreen").style.display = "none";
     if(unsubItems) unsubItems();
@@ -919,7 +992,7 @@ function listenItems(){
     snap.forEach(d => allItems.push({ id: d.id, ...d.data() }));
     populatePlannerFilter();
     renderTable();
-    renderDashboard();
+    renderStatusOverview();
   });
 }
 
@@ -935,6 +1008,26 @@ function isProgressOverdue(item){
   if(!item.targetSelesai) return false;
   const today = new Date(); today.setHours(0,0,0,0);
   return new Date(item.targetSelesai) < today;
+}
+
+// ---------------------------------------------------------------------
+// STATUS 4-WARNA: Belum Dimulai (abu) / In Progress (hijau) / Selesai (biru) / Overdue (merah)
+// Overdue diprioritaskan di atas Belum Dimulai / In Progress kalau progress
+// belum 100% dan target sudah lewat.
+// ---------------------------------------------------------------------
+const STATUS_DEF = {
+  belum:    { label: "Belum Dimulai", color: "var(--status-gray)" },
+  progress: { label: "In Progress",   color: "var(--green)" },
+  selesai:  { label: "Selesai",       color: "var(--accent)" },
+  overdue:  { label: "Overdue",       color: "var(--red)" }
+};
+
+function getItemStatus(item){
+  const total = getTotalProgress(item);
+  if(total >= 100) return { key: "selesai", ...STATUS_DEF.selesai };
+  if(isProgressOverdue(item)) return { key: "overdue", ...STATUS_DEF.overdue };
+  if(total === 0) return { key: "belum", ...STATUS_DEF.belum };
+  return { key: "progress", ...STATUS_DEF.progress };
 }
 
 function daysUntil(dateStr){
@@ -962,18 +1055,90 @@ function populatePlannerFilter(){
 // ---------------------------------------------------------------------
 window.switchView = function(view){
   document.getElementById("viewList").style.display = view === "list" ? "block" : "none";
-  document.getElementById("viewDashboard").style.display = view === "dashboard" ? "block" : "none";
   document.getElementById("viewUsers").style.display = view === "users" ? "block" : "none";
   document.getElementById("tabList").classList.toggle("active", view === "list");
-  document.getElementById("tabDash").classList.toggle("active", view === "dashboard");
   document.getElementById("tabUsers").classList.toggle("active", view === "users");
-  if(view === "dashboard") renderDashboard();
-  if(view === "users") loadUsersPanel();
+  if(view === "list") renderStatusOverview();
+  if(view === "users"){
+    loadUsersPanel();
+    startPresenceWatch();
+  } else {
+    stopPresenceWatch();
+  }
+};
+
+window.toggleDashDetail = function(){
+  const panel = document.getElementById("dashDetailPanel");
+  const btn = document.getElementById("dashDetailToggleBtn");
+  const showing = panel.style.display === "block";
+  panel.style.display = showing ? "none" : "block";
+  btn.textContent = showing ? "Lihat rincian kinerja per kategori & planner ▾" : "Sembunyikan rincian ▴";
 };
 
 // ---------------------------------------------------------------------
 // MANAJEMEN USER (khusus admin)
 // ---------------------------------------------------------------------
+// ---------------------------------------------------------------------
+// PRESENCE (online) — heartbeat berkala; dianggap offline kalau tidak
+// lapor selama PRESENCE_ONLINE_THRESHOLD_SEC. Bukan deteksi real-time
+// instan (itu perlu Realtime Database + onDisconnect, di luar scope ini).
+// ---------------------------------------------------------------------
+function startPresenceHeartbeat(){
+  const beat = async () => {
+    try{
+      await setDoc(doc(db, "presence", currentUser.uid), {
+        nama: currentName, role: currentRole, lastActive: serverTimestamp()
+      }, { merge: true });
+    }catch(e){ console.error("Presence heartbeat gagal:", e); }
+  };
+  beat();
+  presenceHeartbeatTimer = setInterval(beat, PRESENCE_HEARTBEAT_SEC * 1000);
+}
+function stopPresenceHeartbeat(){
+  if(presenceHeartbeatTimer){ clearInterval(presenceHeartbeatTimer); presenceHeartbeatTimer = null; }
+}
+
+function startPresenceWatch(){
+  if(currentRole !== "admin") return;
+  if(unsubPresence) return; // sudah jalan
+  unsubPresence = onSnapshot(collection(db, "presence"), () => renderPresencePanel());
+  presenceWatchTimer = setInterval(renderPresencePanel, 10000); // re-evaluasi staleness tiap 10s
+}
+function stopPresenceWatch(){
+  if(unsubPresence){ unsubPresence(); unsubPresence = null; }
+  if(presenceWatchTimer){ clearInterval(presenceWatchTimer); presenceWatchTimer = null; }
+}
+
+async function renderPresencePanel(){
+  const el = document.getElementById("presenceCard");
+  if(!el) return;
+  try{
+    const snap = await getDocs(collection(db, "presence"));
+    const nowSec = Date.now() / 1000;
+    const online = [];
+    snap.forEach(d => {
+      const data = d.data();
+      if(!data.lastActive || !data.lastActive.seconds) return;
+      if(nowSec - data.lastActive.seconds <= PRESENCE_ONLINE_THRESHOLD_SEC){
+        online.push(data.nama || "(tanpa nama)");
+      }
+    });
+    el.innerHTML = `
+      <div class="presenceHeader">
+        <span class="dot-live"></span>
+        <span>Sedang Online: <span class="count">${online.length}</span></span>
+      </div>
+      <div class="presenceList">
+        ${online.length === 0 ? `<span class="hint">Tidak ada yang online saat ini.</span>` :
+          online.map(n => `<span class="presenceChip"><span class="dot-live"></span>${escapeHtml(n)}</span>`).join("")}
+      </div>
+    `;
+  }catch(e){
+    el.innerHTML = `<div class="hint">Gagal memuat status online.</div>`;
+    console.error(e);
+  }
+}
+
 async function loadUsersPanel(){
   const pendingBody = document.getElementById("pendingTableBody");
   const activeBody = document.getElementById("usersTableBody");
@@ -1166,55 +1331,56 @@ window.goFilterSignal = function(sig){
 };
 
 // ---------------------------------------------------------------------
-// RENDER: DASHBOARD KINERJA
+// RENDER: STATUS OVERVIEW (legend 4-warna, digabung di tab Daftar Pekerjaan)
 // Catatan: ini gambaran KONDISI SAAT INI, bukan tren dari waktu ke waktu —
 // app belum menyimpan snapshot historis harian.
 // ---------------------------------------------------------------------
-function renderDashboard(){
-  const el = document.getElementById("viewDashboard");
-  const total = allItems.length;
-  const doneCount = allItems.filter(i => getTotalProgress(i) >= 100).length;
-  const overdueCount = allItems.filter(isProgressOverdue).length;
+function renderStatusOverview(){
+  const el = document.getElementById("statusOverviewCard");
+  const total = allItems.length || 1; // hindari div/0
+  const counts = { belum:0, progress:0, selesai:0, overdue:0 };
+  allItems.forEach(i => { counts[getItemStatus(i).key]++; });
   const expiringCount = allItems.filter(isExpiringSoon).length;
-  const berjalanCount = total - doneCount;
 
-  let html = `
-    <div class="dashSection">
-      <h3>Kesehatan Project (Kondisi Saat Ini)</h3>
-      <div class="summaryRow">
-        <div class="sumCard" onclick="window.goFilterSignal('')"><div class="num mono">${total}</div><div class="lbl">Total Pekerjaan</div></div>
-        <div class="sumCard" onclick="window.goFilterSignal('done')"><div class="num mono">${doneCount}</div><div class="lbl">Selesai (100%)</div></div>
-        <div class="sumCard" onclick="window.goFilterSignal('berjalan')"><div class="num mono">${berjalanCount}</div><div class="lbl">Sedang Berjalan</div></div>
-        <div class="sumCard overdue" onclick="window.goFilterSignal('overdue')"><div class="num mono">${overdueCount}</div><div class="lbl">Progress Terlambat</div></div>
-        <div class="sumCard overdue" onclick="window.goFilterSignal('expiring')"><div class="num mono">${expiringCount}</div><div class="lbl">Kontrak Mendekati Habis</div></div>
-      </div>
-    </div>
+  const segHtml = ["belum","progress","selesai","overdue"].map(key => {
+    const pct = Math.round((counts[key] / total) * 100);
+    if(pct === 0) return "";
+    return `<div class="stackSeg" style="width:${pct}%;background:${STATUS_DEF[key].color}"></div>`;
+  }).join("");
 
-    <div class="dashSection">
-      <h3>Distribusi per Kategori</h3>
-      <div class="planCard">
-        ${renderCategoryBars()}
-      </div>
-    </div>
+  const chipsHtml = ["belum","progress","selesai","overdue"].map(key => `
+    <button class="legendChip" onclick="window.goFilterSignal('${key}')">
+      <span class="dot" style="background:${STATUS_DEF[key].color}"></span>
+      ${STATUS_DEF[key].label} <b>${counts[key]}</b>
+    </button>
+  `).join("");
+
+  const expiringChip = `
+    <button class="legendChip expiring" onclick="window.goFilterSignal('expiring')">
+      <span class="dot" style="background:var(--amber)"></span>
+      Kontrak Mendekati Habis <b>${expiringCount}</b>
+    </button>
   `;
 
-  if(currentRole === "manager"){
-    html += `
+  let detailHtml = `<div class="dashSection"><h3>Distribusi per Kategori</h3><div class="planCard">${renderCategoryBars()}</div></div>`;
+  if(currentRole === "manager" || currentRole === "admin"){
+    detailHtml += `
       <div class="dashSection">
         <h3>Kinerja per Planner</h3>
         <div class="dashSub">Rata-rata progress dari seluruh pekerjaan yang dipegang masing-masing planner.</div>
-        <div class="planCard">
-          ${renderPlannerBars()}
-        </div>
-      </div>
-    `;
+        <div class="planCard">${renderPlannerBars()}</div>
+      </div>`;
   }
-
   if(currentRole === "planner"){
-    html += renderMyPerformance();
+    detailHtml += renderMyPerformance();
   }
 
-  el.innerHTML = html;
+  el.innerHTML = `
+    <div class="stackedBar">${segHtml}</div>
+    <div class="legendRow">${chipsHtml}${expiringChip}</div>
+    <button class="dashDetailToggle" id="dashDetailToggleBtn" onclick="window.toggleDashDetail()">Lihat rincian kinerja per kategori & planner ▾</button>
+    <div id="dashDetailPanel">${detailHtml}</div>
+  `;
 }
 
 function renderCategoryBars(){
@@ -1348,10 +1514,11 @@ window.renderTable = function(){
   let items = [...allItems];
   if(fKategori) items = items.filter(i => i.kategori === fKategori);
   if(fPlanner) items = items.filter(i => i.pic === fPlanner);
-  if(fSignal === "overdue") items = items.filter(isProgressOverdue);
+  if(fSignal === "belum") items = items.filter(i => getItemStatus(i).key === "belum");
+  if(fSignal === "progress") items = items.filter(i => getItemStatus(i).key === "progress");
+  if(fSignal === "selesai") items = items.filter(i => getItemStatus(i).key === "selesai");
+  if(fSignal === "overdue") items = items.filter(i => getItemStatus(i).key === "overdue");
   if(fSignal === "expiring") items = items.filter(isExpiringSoon);
-  if(fSignal === "done") items = items.filter(i => getTotalProgress(i) >= 100);
-  if(fSignal === "berjalan") items = items.filter(i => getTotalProgress(i) < 100);
 
   const tbody = document.getElementById("tableBody");
   const emptyState = document.getElementById("emptyState");
@@ -1381,7 +1548,8 @@ window.renderTable = function(){
   tbody.innerHTML = pageItems.map(item => {
     const total = getTotalProgress(item);
     const isDone = total >= 100;
-    const overdue = isProgressOverdue(item);
+    const status = getItemStatus(item);
+    const overdue = status.key === "overdue";
     const expiring = isExpiringSoon(item);
     const pillClass = KATEGORI_PILL_CLASS[item.kategori] || "pill-lainnya";
 
@@ -1420,10 +1588,11 @@ window.renderTable = function(){
                 <span style="width:${zoneW["Penyiapan Dokumen Tender"]}%"></span>
                 <span style="width:${zoneW["Proses Tender"]}%"></span>
               </div>
-              <div class="progFill ${isDone ? 'done' : ''}" style="width:${total}%"></div>
+              <div class="progFill status-${status.key}" style="width:${total}%"></div>
             </div>
             <div class="progPct mono">${total}%</div>
           </div>
+          <div style="margin-top:5px;"><span class="statusTag statusTag-${status.key}">${status.label}</span></div>
         </td>
         <td class="dateCell">${dateBlock}</td>
         <td>
