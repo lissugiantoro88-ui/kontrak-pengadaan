@@ -23,6 +23,7 @@
     --red-soft:#FBEAE8;
     --status-gray:#9CA3AF;
     --status-gray-soft:#EEF0F2;
+    --cancel:#5B6472;
     --radius:10px;
   }
   *{box-sizing:border-box;}
@@ -93,6 +94,34 @@
     color:#fff;background:var(--red);padding:1px 7px;border-radius:8px;margin-left:8px;
     vertical-align:middle;text-transform:uppercase;letter-spacing:.02em;
   }
+
+  /* ===== HOLD / CANCEL ===== */
+  .holdCancelBox{
+    border:1px solid var(--line);background:#FAFAF8;
+    border-radius:8px;padding:12px 14px;margin-bottom:16px;
+  }
+  .holdCancelOptions{display:flex;gap:20px;flex-wrap:wrap;}
+  .holdCancelCheck{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:500;}
+  .holdCancelCheck input[type=checkbox]{width:16px;height:16px;cursor:pointer;}
+  .holdCancelCheck.hc-hold{color:var(--amber);}
+  .holdCancelCheck.hc-hold input{accent-color:var(--amber);}
+  .holdCancelCheck.hc-cancel{color:var(--cancel);}
+  .holdCancelCheck.hc-cancel input{accent-color:var(--cancel);}
+  .holdCancelBox textarea{
+    width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;
+    font-family:inherit;font-size:13px;resize:vertical;background:#fff;box-sizing:border-box;
+  }
+  .statusTag-hold{background:var(--amber-soft);color:var(--amber);}
+  .statusTag-cancel{background:#E7E9EC;color:var(--cancel);}
+  .progFill.status-hold{background:var(--amber);}
+  .progFill.status-cancel{background:var(--cancel);}
+
+  /* ===== WAITING LIST ===== */
+  .wlStatusPill{
+    display:inline-block;font-size:11px;padding:3px 9px;border-radius:20px;font-weight:500;
+  }
+  .wlStatusPill.pending{background:var(--status-gray-soft);color:#6B7280;}
+  .wlStatusPill.assigned{background:var(--green-soft);color:var(--green);}
   .stackedBar{
     display:flex;height:14px;border-radius:7px;overflow:hidden;margin-bottom:12px;
     background:#EFEFEC;
@@ -651,6 +680,7 @@
   <main>
     <div class="viewTabs" id="viewTabsBar">
       <button class="viewTab active" id="tabList" onclick="window.switchView('list')">Daftar Pekerjaan</button>
+      <button class="viewTab" id="tabWaitlist" onclick="window.switchView('waitlist')">Waiting List</button>
       <button class="viewTab" id="tabUsers" style="display:none;" onclick="window.switchView('users')">Manajemen User</button>
       <button class="viewTab" id="tabLog" style="display:none;" onclick="window.switchView('log')">Log Aktivitas</button>
     </div>
@@ -692,6 +722,8 @@
           <option value="overdue">Overdue</option>
           <option value="expiring">Kontrak Mendekati Habis</option>
           <option value="needsManagement">🚩 Perlu Keputusan Manajemen</option>
+          <option value="hold">Hold</option>
+          <option value="cancel">Cancelled</option>
         </select>
         <button class="btn btn-ghost" onclick="window.resetFilters()">Reset</button>
       </div>
@@ -739,6 +771,23 @@
     </div>
 
     <!-- ===== VIEW: MANAJEMEN USER (admin & senior planner) ===== -->
+    <!-- ===== VIEW: WAITING LIST (semua role bisa lihat) ===== -->
+    <div id="viewWaitlist" style="display:none;">
+      <div class="hint" style="margin-bottom:14px;">Daftar pekerjaan yang belum resmi masuk sistem — belum ada checklist/progress, cuma catatan awal. Setelah didisposisi ke planner, buat entri lengkap lewat "+ Tambah Pekerjaan" di tab Daftar Pekerjaan.</div>
+      <div class="toolbar">
+        <div></div>
+        <button class="btn btn-primary" id="btnAddWaitlist" style="display:none;" onclick="window.openWaitlistModal()">+ Tambah ke Waiting List</button>
+      </div>
+      <div class="tableWrap">
+        <table>
+          <thead>
+            <tr><th>Nama Pekerjaan</th><th>Catatan</th><th>Status</th><th>Ditambahkan Oleh</th><th style="width:160px;"></th></tr>
+          </thead>
+          <tbody id="waitlistTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
     <div id="viewUsers" style="display:none;">
       <div class="presenceCard" id="presenceCard" style="display:none;"></div>
 
@@ -830,6 +879,47 @@
       <div class="fabSub">cdsc.web.id</div>
     </div>
   </a>
+</div>
+
+<!-- ===================== MODAL: TAMBAH WAITING LIST ===================== -->
+<div class="modalOverlay" id="waitlistModal">
+  <div class="modalBox">
+    <h2>Tambah ke Waiting List</h2>
+    <div class="field">
+      <label>Nama Pekerjaan</label>
+      <input type="text" id="fWaitlistNama" placeholder="mis. Pengadaan Jasa Kalibrasi Instrumen Area 3">
+    </div>
+    <div class="field">
+      <label>Catatan (opsional)</label>
+      <textarea id="fWaitlistCatatan" rows="2" placeholder="Konteks singkat, sumber permintaan, dll"></textarea>
+    </div>
+    <div class="errMsg" id="waitlistModalErr"></div>
+    <div class="modalFooter">
+      <button class="btn btn-ghost" onclick="window.closeWaitlistModal()">Batal</button>
+      <button class="btn btn-primary" onclick="window.saveWaitlistItem()">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== MODAL: DISPOSISI KE PLANNER ===================== -->
+<div class="modalOverlay" id="disposisiModal">
+  <div class="modalBox">
+    <h2>Disposisi ke Planner</h2>
+    <div class="field">
+      <label>Pekerjaan</label>
+      <div class="hint" id="disposisiItemName" style="display:block;font-size:13px;color:var(--ink);"></div>
+    </div>
+    <div class="field">
+      <label>Disposisikan ke</label>
+      <input type="text" id="fDisposisiPlanner" placeholder="Nama planner" list="disposisiPlannerList">
+      <datalist id="disposisiPlannerList"></datalist>
+    </div>
+    <div class="errMsg" id="disposisiModalErr"></div>
+    <div class="modalFooter">
+      <button class="btn btn-ghost" onclick="window.closeDisposisiModal()">Batal</button>
+      <button class="btn btn-primary" onclick="window.saveDisposisi()">Disposisikan</button>
+    </div>
+  </div>
 </div>
 
 <!-- ===================== MODAL: FORMAT IMPORT EXCEL ===================== -->
@@ -1050,6 +1140,23 @@
       <input type="text" id="fKet" placeholder="mis. [Closed], User Purchase, Repeat Order, dll">
     </div>
 
+    <div class="holdCancelBox">
+      <div class="holdCancelOptions">
+        <label class="holdCancelCheck hc-hold">
+          <input type="checkbox" id="fStatusHold" onchange="window.onHoldCancelChange('hold')">
+          <span>Hold — kontrak ditunda</span>
+        </label>
+        <label class="holdCancelCheck hc-cancel">
+          <input type="checkbox" id="fStatusCancel" onchange="window.onHoldCancelChange('cancel')">
+          <span>Cancel — kontrak dibatalkan</span>
+        </label>
+      </div>
+      <div class="field" id="holdCancelNoteWrap" style="display:none;margin-top:8px;">
+        <label id="holdCancelNoteLabel">Catatan</label>
+        <textarea id="fHoldCancelNote" rows="2" placeholder="Jelaskan alasan hold/cancel"></textarea>
+      </div>
+    </div>
+
     <div class="escalationBox">
       <label class="escalationCheck">
         <input type="checkbox" id="fNeedsManagement" onchange="window.onNeedsManagementChange()">
@@ -1235,6 +1342,26 @@ window.onDisiplinChange = function(){
 window.onNeedsManagementChange = function(){
   const checked = document.getElementById("fNeedsManagement").checked;
   document.getElementById("managementNoteWrap").style.display = checked ? "block" : "none";
+};
+
+window.onHoldCancelChange = function(source){
+  const holdEl = document.getElementById("fStatusHold");
+  const cancelEl = document.getElementById("fStatusCancel");
+  // Saling eksklusif — centang salah satu otomatis lepas yang lain.
+  if(source === "hold" && holdEl.checked) cancelEl.checked = false;
+  if(source === "cancel" && cancelEl.checked) holdEl.checked = false;
+
+  const noteWrap = document.getElementById("holdCancelNoteWrap");
+  const noteLabel = document.getElementById("holdCancelNoteLabel");
+  if(holdEl.checked){
+    noteWrap.style.display = "block";
+    noteLabel.textContent = "Catatan — alasan Hold";
+  } else if(cancelEl.checked){
+    noteWrap.style.display = "block";
+    noteLabel.textContent = "Catatan — alasan Cancel";
+  } else {
+    noteWrap.style.display = "none";
+  }
 };
 
 // ---------------------------------------------------------------------
@@ -1594,7 +1721,8 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById("btnExportPdf").style.display = ["manager", "admin", "senior_planner"].includes(currentRole) ? "inline-flex" : "none";
     document.getElementById("tabUsers").style.display = ["admin", "senior_planner"].includes(currentRole) ? "inline-block" : "none";
     document.getElementById("tabLog").style.display = currentRole === "admin" ? "inline-block" : "none";
-    document.getElementById("viewTabsBar").style.display = ["admin", "senior_planner"].includes(currentRole) ? "flex" : "none";
+    document.getElementById("btnAddWaitlist").style.display = ["manager", "senior_planner", "admin"].includes(currentRole) ? "inline-flex" : "none";
+    document.getElementById("viewTabsBar").style.display = "flex"; // selalu terlihat: Waiting List tersedia untuk semua role
 
     startPresenceHeartbeat();
     startIdleWatcher();
@@ -1664,10 +1792,16 @@ const STATUS_DEF = {
   belum:    { label: "Belum Dimulai", color: "var(--status-gray)" },
   progress: { label: "In Progress",   color: "var(--green)" },
   selesai:  { label: "Selesai",       color: "var(--accent)" },
-  overdue:  { label: "Overdue",       color: "var(--red)" }
+  overdue:  { label: "Overdue",       color: "var(--red)" },
+  hold:     { label: "Hold",          color: "var(--amber)" },
+  cancel:   { label: "Cancelled",     color: "var(--cancel)" }
 };
 
 function getItemStatus(item){
+  // Hold/Cancel MENGALAHKAN status progress lain — kontrak yang sengaja
+  // ditunda/dibatalkan bukan "overdue" atau "macet", itu keputusan sengaja.
+  if(item.statusKontrak === "cancel") return { key: "cancel", ...STATUS_DEF.cancel };
+  if(item.statusKontrak === "hold") return { key: "hold", ...STATUS_DEF.hold };
   const total = getTotalProgress(item);
   if(total >= 100) return { key: "selesai", ...STATUS_DEF.selesai };
   if(isProgressOverdue(item)) return { key: "overdue", ...STATUS_DEF.overdue };
@@ -1690,6 +1824,7 @@ function getAgeDays(item){
 }
 
 function isStuck(item){
+  if(item.statusKontrak) return false; // hold/cancel: bukan "macet", itu keputusan sengaja
   if(getTotalProgress(item) >= 100) return false;
   const age = getAgeDays(item);
   return age !== null && age >= STUCK_THRESHOLD_DAYS;
@@ -1720,12 +1855,15 @@ function populatePlannerFilter(){
 // ---------------------------------------------------------------------
 window.switchView = function(view){
   document.getElementById("viewList").style.display = view === "list" ? "block" : "none";
+  document.getElementById("viewWaitlist").style.display = view === "waitlist" ? "block" : "none";
   document.getElementById("viewUsers").style.display = view === "users" ? "block" : "none";
   document.getElementById("viewLog").style.display = view === "log" ? "block" : "none";
   document.getElementById("tabList").classList.toggle("active", view === "list");
+  document.getElementById("tabWaitlist").classList.toggle("active", view === "waitlist");
   document.getElementById("tabUsers").classList.toggle("active", view === "users");
   document.getElementById("tabLog").classList.toggle("active", view === "log");
   if(view === "list") renderStatusOverview();
+  if(view === "waitlist") loadWaitlist();
   if(view === "users"){
     loadUsersPanel();
     startPresenceWatch();
@@ -1741,6 +1879,176 @@ window.toggleDashDetail = function(){
   dashDetailExpanded = !dashDetailExpanded;
   panel.style.display = dashDetailExpanded ? "block" : "none";
   btn.textContent = dashDetailExpanded ? "Sembunyikan rincian ▴" : "Lihat rincian kinerja per kategori & planner ▾";
+};
+
+// ---------------------------------------------------------------------
+// WAITING LIST — pekerjaan yang belum resmi masuk sistem. Tambah &
+// disposisi hanya untuk manager/senior_planner/admin (ditegakkan juga di
+// Firestore Rules). Semua role boleh LIHAT (transparansi tim).
+// ---------------------------------------------------------------------
+let allWaitlistItems = [];
+
+async function loadWaitlist(){
+  const tbody = document.getElementById("waitlistTableBody");
+  tbody.innerHTML = `<tr><td colspan="5">Memuat...</td></tr>`;
+  try{
+    const q = query(collection(db, "waiting_list"), orderBy("createdAt", "desc"));
+    const snap = await getDocs(q);
+    allWaitlistItems = [];
+    snap.forEach(d => allWaitlistItems.push({ id: d.id, ...d.data() }));
+    renderWaitlistTable();
+  }catch(e){
+    tbody.innerHTML = `<tr><td colspan="5">Gagal memuat waiting list.</td></tr>`;
+    console.error(e);
+  }
+}
+
+function renderWaitlistTable(){
+  const tbody = document.getElementById("waitlistTableBody");
+  const canManage = ["manager", "senior_planner", "admin"].includes(currentRole);
+  const canCreateJob = ["planner", "senior_planner", "admin"].includes(currentRole);
+
+  if(allWaitlistItems.length === 0){
+    tbody.innerHTML = `<tr><td colspan="5">Waiting list masih kosong.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = allWaitlistItems.map(w => {
+    const isAssigned = w.status === "assigned";
+    const statusHtml = isAssigned
+      ? `<span class="wlStatusPill assigned">Didisposisi ke ${escapeHtml(w.assignedTo)}</span>`
+      : `<span class="wlStatusPill pending">Menunggu Disposisi</span>`;
+
+    let actionsHtml = "";
+    if(canManage){
+      actionsHtml += `<button class="iconbtn" onclick='window.openDisposisiModal(${JSON.stringify(w.id)})'>Disposisi</button> `;
+    }
+    if(isAssigned && canCreateJob){
+      actionsHtml += `<button class="iconbtn" onclick='window.convertWaitlistToJob(${JSON.stringify(w.id)})'>Buat Pekerjaan</button> `;
+    }
+    if(canManage){
+      actionsHtml += `<button class="iconbtn" style="color:var(--red);" onclick='window.deleteWaitlistItem(${JSON.stringify(w.id)})'>Hapus</button>`;
+    }
+
+    return `
+      <tr>
+        <td>${escapeHtml(w.namaPekerjaan)}</td>
+        <td style="font-size:12.5px;color:var(--ink-soft);">${escapeHtml(w.catatan || "—")}</td>
+        <td>${statusHtml}</td>
+        <td>${escapeHtml(w.createdBy || "—")}</td>
+        <td><div class="rowActions">${actionsHtml}</div></td>
+      </tr>
+    `;
+  }).join("");
+}
+
+window.openWaitlistModal = function(){
+  document.getElementById("fWaitlistNama").value = "";
+  document.getElementById("fWaitlistCatatan").value = "";
+  document.getElementById("waitlistModalErr").textContent = "";
+  document.getElementById("waitlistModal").classList.add("show");
+};
+window.closeWaitlistModal = function(){
+  document.getElementById("waitlistModal").classList.remove("show");
+};
+
+window.saveWaitlistItem = async function(){
+  const nama = document.getElementById("fWaitlistNama").value.trim();
+  const catatan = document.getElementById("fWaitlistCatatan").value.trim();
+  const errEl = document.getElementById("waitlistModalErr");
+  errEl.textContent = "";
+  if(!nama){
+    errEl.textContent = "Nama pekerjaan wajib diisi.";
+    return;
+  }
+  try{
+    await addDoc(collection(db, "waiting_list"), {
+      namaPekerjaan: nama,
+      catatan: catatan,
+      status: "pending",
+      assignedTo: null,
+      createdBy: currentName,
+      createdByRole: currentRole,
+      createdAt: serverTimestamp()
+    });
+    window.closeWaitlistModal();
+    loadWaitlist();
+  }catch(e){
+    errEl.textContent = "Gagal menyimpan. Periksa koneksi atau hak akses.";
+    console.error(e);
+  }
+};
+
+let disposisiTargetId = null;
+
+window.openDisposisiModal = function(id){
+  const item = allWaitlistItems.find(w => w.id === id);
+  if(!item) return;
+  disposisiTargetId = id;
+  document.getElementById("disposisiItemName").textContent = item.namaPekerjaan;
+  document.getElementById("fDisposisiPlanner").value = item.assignedTo || "";
+  document.getElementById("disposisiModalErr").textContent = "";
+
+  // Isi datalist dengan daftar planner yang sudah pernah pegang pekerjaan
+  // (dari allItems) — bukan daftar user resmi, cuma bantuan pengetikan.
+  const planners = [...new Set(allItems.map(i => i.pic).filter(Boolean))].sort();
+  document.getElementById("disposisiPlannerList").innerHTML =
+    planners.map(p => `<option value="${escapeHtml(p)}"></option>`).join("");
+
+  document.getElementById("disposisiModal").classList.add("show");
+};
+window.closeDisposisiModal = function(){
+  document.getElementById("disposisiModal").classList.remove("show");
+  disposisiTargetId = null;
+};
+
+window.saveDisposisi = async function(){
+  const planner = document.getElementById("fDisposisiPlanner").value.trim();
+  const errEl = document.getElementById("disposisiModalErr");
+  errEl.textContent = "";
+  if(!planner){
+    errEl.textContent = "Nama planner wajib diisi.";
+    return;
+  }
+  if(!disposisiTargetId) return;
+  try{
+    await updateDoc(doc(db, "waiting_list", disposisiTargetId), {
+      status: "assigned",
+      assignedTo: planner,
+      assignedBy: currentName,
+      assignedAt: serverTimestamp()
+    });
+    window.closeDisposisiModal();
+    loadWaitlist();
+  }catch(e){
+    errEl.textContent = "Gagal menyimpan disposisi. Periksa hak akses.";
+    console.error(e);
+  }
+};
+
+window.deleteWaitlistItem = async function(id){
+  if(!confirm("Hapus item ini dari waiting list?")) return;
+  try{
+    await deleteDoc(doc(db, "waiting_list", id));
+    loadWaitlist();
+  }catch(e){
+    alert("Gagal menghapus. Periksa hak akses.");
+    console.error(e);
+  }
+};
+
+// Jembatan ke form "+ Tambah Pekerjaan" biasa — cuma PRA-ISI nama & PIC,
+// TIDAK otomatis menghapus/menandai item waiting list sebagai selesai.
+// Setelah pekerjaan resmi disimpan, hapus manual item waiting list-nya
+// lewat tombol "Hapus" supaya tidak dobel — sengaja tidak diotomatiskan
+// penuh, biar Anda tetap kontrol penuh kapan item dianggap "beres".
+window.convertWaitlistToJob = function(id){
+  const item = allWaitlistItems.find(w => w.id === id);
+  if(!item) return;
+  window.switchView("list");
+  window.openAddModal();
+  document.getElementById("fNama").value = item.namaPekerjaan;
+  if(item.assignedTo) document.getElementById("fPic").value = item.assignedTo;
 };
 
 // ---------------------------------------------------------------------
@@ -1814,6 +2122,10 @@ function buildChangeSummary(oldItem, newPayload){
     parts.push(newPayload.needsManagementSupport
       ? "🚩 Ditandai butuh keputusan Manajemen"
       : "Tanda butuh keputusan Manajemen dicabut");
+  }
+  if((newPayload.statusKontrak || "") !== (oldItem.statusKontrak || "")){
+    const labelOf = v => v === "hold" ? "Hold" : v === "cancel" ? "Cancel" : "Normal";
+    parts.push(`Status Kontrak: ${labelOf(oldItem.statusKontrak)} → ${labelOf(newPayload.statusKontrak)}`);
   }
   return parts.length ? parts.join(" · ") : "Tidak ada perubahan terdeteksi";
 }
@@ -2299,17 +2611,22 @@ function renderStatusOverview(){
   const { items } = getFilteredItems();
   const realTotal = items.length;
   const total = realTotal || 1; // hindari div/0 khusus untuk hitung persentase
-  const counts = { belum:0, progress:0, selesai:0, overdue:0 };
+  const counts = { belum:0, progress:0, selesai:0, overdue:0, hold:0, cancel:0 };
   items.forEach(i => { counts[getItemStatus(i).key]++; });
   const expiringCount = items.filter(isExpiringSoon).length;
 
-  const segHtml = ["belum","progress","selesai","overdue"].map(key => {
+  const segHtml = ["belum","progress","selesai","overdue","hold","cancel"].map(key => {
     const pct = Math.round((counts[key] / total) * 100);
     if(pct === 0) return "";
     return `<div class="stackSeg" style="width:${pct}%;background:${STATUS_DEF[key].color}" title="${STATUS_DEF[key].label}: ${counts[key]} (${pct}%) — klik untuk filter" onclick="window.goFilterSignal('${key}')"></div>`;
   }).join("");
 
   const chipsHtml = ["belum","progress","selesai","overdue"].map(key => `
+    <button class="legendChip" onclick="window.goFilterSignal('${key}')">
+      <span class="dot" style="background:${STATUS_DEF[key].color}"></span>
+      ${STATUS_DEF[key].label} <b>${counts[key]}</b>
+    </button>
+  `).join("") + ["hold","cancel"].filter(key => counts[key] > 0).map(key => `
     <button class="legendChip" onclick="window.goFilterSignal('${key}')">
       <span class="dot" style="background:${STATUS_DEF[key].color}"></span>
       ${STATUS_DEF[key].label} <b>${counts[key]}</b>
@@ -2518,8 +2835,8 @@ window.exportPdfReport = function(){
   }
   fileTitle += "_" + dateForFile;
 
-  // --- Ringkasan status (4-legend) ---
-  const counts = { belum:0, progress:0, selesai:0, overdue:0 };
+  // --- Ringkasan status (6-legend) ---
+  const counts = { belum:0, progress:0, selesai:0, overdue:0, hold:0, cancel:0 };
   items.forEach(i => counts[getItemStatus(i).key]++);
   const totalCount = items.length;
   const expiringCount = items.filter(isExpiringSoon).length;
@@ -2546,9 +2863,9 @@ window.exportPdfReport = function(){
 
   // Print window adalah dokumen TERPISAH — tidak mewarisi CSS variables app
   // utama (var(--accent) dkk tidak akan dikenali di sana). Pakai hex langsung.
-  const STATUS_HEX = { belum:"#9CA3AF", progress:"#3C7A5C", selesai:"#2B6CB0", overdue:"#B84A3E" };
+  const STATUS_HEX = { belum:"#9CA3AF", progress:"#3C7A5C", selesai:"#2B6CB0", overdue:"#B84A3E", hold:"#C77D2E", cancel:"#5B6472" };
 
-  const statusRowsHtml = ["belum","progress","selesai","overdue"].map(key => `
+  const statusRowsHtml = ["belum","progress","selesai","overdue","hold","cancel"].filter(key => counts[key] > 0 || ["belum","progress","selesai","overdue"].includes(key)).map(key => `
     <tr>
       <td><span class="dotLegend" style="background:${STATUS_HEX[key]}"></span>${STATUS_DEF[key].label}</td>
       <td class="num">${counts[key]}</td>
@@ -2803,6 +3120,8 @@ function getFilteredItems(){
   if(fSignal === "overdue") items = items.filter(i => getItemStatus(i).key === "overdue");
   if(fSignal === "expiring") items = items.filter(isExpiringSoon);
   if(fSignal === "needsManagement") items = items.filter(i => i.needsManagementSupport);
+  if(fSignal === "hold") items = items.filter(i => i.statusKontrak === "hold");
+  if(fSignal === "cancel") items = items.filter(i => i.statusKontrak === "cancel");
   if(fSearch){
     items = items.filter(i => {
       const haystack = [
@@ -2819,7 +3138,7 @@ function getFilteredItems(){
   if(fDisiplin) filterLabels.push(`Disiplin: ${fDisiplin}`);
   if(fPlanner) filterLabels.push(`Planner: ${fPlanner}`);
   if(fSignal){
-    const map = { belum:"Belum Dimulai", progress:"In Progress", selesai:"Selesai", overdue:"Overdue", expiring:"Kontrak Mendekati Habis", needsManagement:"Perlu Keputusan Manajemen" };
+    const map = { belum:"Belum Dimulai", progress:"In Progress", selesai:"Selesai", overdue:"Overdue", expiring:"Kontrak Mendekati Habis", needsManagement:"Perlu Keputusan Manajemen", hold:"Hold", cancel:"Cancelled" };
     filterLabels.push(`Status: ${map[fSignal] || fSignal}`);
   }
 
@@ -3023,6 +3342,10 @@ window.openAddModal = function(){
   document.getElementById("fProgressNote").value = "";
   document.getElementById("fDasarPengadaan").innerHTML = "";
   document.getElementById("fKet").value = "";
+  document.getElementById("fStatusHold").checked = false;
+  document.getElementById("fStatusCancel").checked = false;
+  document.getElementById("fHoldCancelNote").value = "";
+  document.getElementById("holdCancelNoteWrap").style.display = "none";
   document.getElementById("fNeedsManagement").checked = false;
   document.getElementById("fManagementNote").value = "";
   document.getElementById("managementNoteWrap").style.display = "none";
@@ -3077,6 +3400,18 @@ window.openEditModal = function(id){
   document.getElementById("fProgressNote").value = item.progressNote || "";
   document.getElementById("fDasarPengadaan").innerHTML = item.dasarPengadaan || "";
   document.getElementById("fKet").value = item.keterangan || "";
+  document.getElementById("fStatusHold").checked = item.statusKontrak === "hold";
+  document.getElementById("fStatusCancel").checked = item.statusKontrak === "cancel";
+  document.getElementById("fHoldCancelNote").value = item.statusKontrakNote || "";
+  const hcNoteWrap = document.getElementById("holdCancelNoteWrap");
+  const hcNoteLabel = document.getElementById("holdCancelNoteLabel");
+  if(item.statusKontrak === "hold"){
+    hcNoteWrap.style.display = "block"; hcNoteLabel.textContent = "Catatan — alasan Hold";
+  } else if(item.statusKontrak === "cancel"){
+    hcNoteWrap.style.display = "block"; hcNoteLabel.textContent = "Catatan — alasan Cancel";
+  } else {
+    hcNoteWrap.style.display = "none";
+  }
   document.getElementById("fNeedsManagement").checked = !!item.needsManagementSupport;
   document.getElementById("fManagementNote").value = item.managementSupportNote || "";
   document.getElementById("managementNoteWrap").style.display = item.needsManagementSupport ? "block" : "none";
@@ -3106,7 +3441,8 @@ function setFieldPermissions(isEdit){
   const managerOnly = currentRole === "manager" && isEdit;
   const readOnlyAll = isViewer || managerOnly;
   const fields = ["fNama","fKategori","fKategoriLainnya","fContractType","fContractTypeLainnya","fDisiplin","fDisiplinLainnya",
-                  "fPic","fEffective","fProgressNote","fKet","fNeedsManagement","fManagementNote"];
+                  "fPic","fEffective","fProgressNote","fKet","fNeedsManagement","fManagementNote",
+                  "fStatusHold","fStatusCancel","fHoldCancelNote"];
   fields.forEach(id => { document.getElementById(id).disabled = readOnlyAll; });
   document.querySelectorAll("#stageChecklist input[type=checkbox]").forEach(cb => { cb.disabled = readOnlyAll; });
   document.querySelectorAll(".stageDetailPanel input, .stageDetailPanel textarea, .stageDetailPanel select").forEach(el => { el.disabled = readOnlyAll; });
@@ -3164,6 +3500,10 @@ window.saveItem = async function(){
     const needsManagement = document.getElementById("fNeedsManagement").checked;
     const wasNeedsManagement = existingItem ? !!existingItem.needsManagementSupport : false;
 
+    let statusKontrak = "";
+    if(document.getElementById("fStatusHold").checked) statusKontrak = "hold";
+    else if(document.getElementById("fStatusCancel").checked) statusKontrak = "cancel";
+
     const payload = {
       namaPekerjaan: nama,
       kategori: kategori,
@@ -3175,6 +3515,8 @@ window.saveItem = async function(){
       progressNote: document.getElementById("fProgressNote").value.trim(),
       dasarPengadaan: sanitizeRichHtml(document.getElementById("fDasarPengadaan").innerHTML.trim()),
       keterangan: document.getElementById("fKet").value.trim(),
+      statusKontrak: statusKontrak,
+      statusKontrakNote: statusKontrak ? document.getElementById("fHoldCancelNote").value.trim() : "",
       needsManagementSupport: needsManagement,
       managementSupportNote: needsManagement ? document.getElementById("fManagementNote").value.trim() : "",
       stages: newStages,
