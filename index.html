@@ -277,7 +277,17 @@
     flex-wrap:wrap;
     gap:10px;
   }
-  .filters{display:flex;gap:8px;flex-wrap:wrap;}
+  .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .myTasksToggle{
+    display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;flex-shrink:0;
+  }
+  .myTasksBtn{
+    border:none;background:#fff;padding:7px 13px;font-size:12.5px;font-family:inherit;
+    cursor:pointer;color:var(--ink-soft);
+  }
+  .myTasksBtn:first-child{border-right:1px solid var(--line);}
+  .myTasksBtn.active{background:var(--accent);color:#fff;font-weight:500;}
+  .myTasksBtn:hover:not(.active){background:#F0F0EE;}
   .filters select{
     padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:#fff;font-size:13px;font-family:inherit;
   }
@@ -646,6 +656,26 @@
     }
     .appBody{display:block;}
     main{max-width:100%;}
+
+    /* ===== MODAL di mobile: full-screen, bukan kotak kecil di tengah —
+       modal ini isinya padat (12 checklist + field detail + rich editor),
+       kotak 480px dengan padding ganda (overlay+box) menyisakan ruang
+       terlalu sempit di layar HP. ===== */
+    .modalOverlay{padding:0;align-items:stretch;}
+    .modalBox{
+      width:100%;max-width:100%;height:100%;max-height:100%;
+      border-radius:0;padding:16px;
+    }
+    .stageDetailPanel{margin-left:10px;}
+
+    /* Footer modal: tombol ditumpuk penuh-lebar, lebih mudah disentuh
+       dengan jempol, urutan diprioritaskan (Simpan paling gampang dijangkau). */
+    .modalFooter{flex-direction:column;}
+    .modalFooter .btn{width:100%;margin:0 0 8px 0 !important;}
+    .modalFooter .btn:last-child{margin-bottom:0 !important;}
+    #btnSaveItem{order:-3;}
+    #btnPrintItem{order:-2;}
+    #btnDelete{order:1;margin-right:0 !important;}
   }
 </style>
 </head>
@@ -759,6 +789,10 @@
 
     <div class="toolbar">
       <div class="filters">
+        <div class="myTasksToggle" id="myTasksToggle" style="display:none;">
+          <button class="myTasksBtn active" id="myTasksBtnMine" onclick="window.setMyTasksFilter(true)">Tugas Saya</button>
+          <button class="myTasksBtn" id="myTasksBtnAll" onclick="window.setMyTasksFilter(false)">Semua</button>
+        </div>
         <input type="text" id="searchKeyword" placeholder="Cari.." oninput="window.onFilterChange()" style="padding:7px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;font-family:inherit;min-width:200px;">
         <select id="filterKategori" onchange="window.onFilterChange()">
           <option value="">Semua Kategori</option>
@@ -1239,6 +1273,7 @@
 
     <div class="modalFooter">
       <button class="btn btn-ghost" id="btnDelete" style="margin-right:auto;color:var(--red);border-color:var(--red-soft);display:none;" onclick="window.deleteItem()">Hapus</button>
+      <button class="btn btn-ghost" id="btnPrintItem" style="display:none;" onclick="window.printSingleItem()">Cetak Ringkasan</button>
       <button class="btn btn-ghost" onclick="window.closeModal()">Batal</button>
       <button class="btn btn-primary" id="btnSaveItem" onclick="window.saveItem()">Simpan</button>
     </div>
@@ -1389,6 +1424,7 @@ let idleTimer = null;
 const IDLE_TIMEOUT_MS = 10 * 60 * 1000; // 10 menit tanpa aktivitas → auto logout
 const IDLE_EVENTS = ["mousemove", "mousedown", "keydown", "scroll", "touchstart", "click"];
 let dashDetailExpanded = false; // supaya panel rincian tidak tertutup ulang tiap kali search diketik
+let hasAppliedDefaultMyTasks = false; // reset per sesi login (lihat stopPresenceHeartbeat dkk saat logout)
 
 // ---------------------------------------------------------------------
 // Show/hide field "Lainnya" untuk kategori & jenis kontrak
@@ -1797,6 +1833,7 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById("tabUsers").style.display = ["admin", "senior_planner"].includes(currentRole) ? "inline-block" : "none";
     document.getElementById("tabLog").style.display = currentRole === "admin" ? "inline-block" : "none";
     document.getElementById("btnAddWaitlist").style.display = ["manager", "senior_planner", "admin"].includes(currentRole) ? "inline-flex" : "none";
+    document.getElementById("myTasksToggle").style.display = ["planner", "senior_planner"].includes(currentRole) ? "flex" : "none";
     // Sidebar sekarang selalu tampil (bukan lagi horizontal tab bar yang bisa disembunyikan total)
 
     startPresenceHeartbeat();
@@ -1807,6 +1844,7 @@ onAuthStateChanged(auth, async (user) => {
   } else {
     currentUser = null;
     currentRole = null;
+    hasAppliedDefaultMyTasks = false;
     stopPresenceHeartbeat();
     stopPresenceWatch();
     stopIdleWatcher();
@@ -1839,6 +1877,15 @@ function listenItems(){
     // field updatedAt) dianggap timestamp 0 → otomatis tenggelam ke bawah.
     allItems.sort((a, b) => tsMillis(b.updatedAt) - tsMillis(a.updatedAt));
     populatePlannerFilter();
+    // Default "Tugas Saya" aktif untuk planner/senior_planner — sekali saja
+    // per sesi login, supaya tidak memaksa balik ke filter ini kalau user
+    // sudah sengaja pindah ke "Semua".
+    if(!hasAppliedDefaultMyTasks && ["planner", "senior_planner"].includes(currentRole)){
+      hasAppliedDefaultMyTasks = true;
+      document.getElementById("filterPlanner").value = currentName;
+      document.getElementById("myTasksBtnMine").classList.add("active");
+      document.getElementById("myTasksBtnAll").classList.remove("active");
+    }
     renderTable();
     renderStatusOverview();
   });
@@ -2888,6 +2935,128 @@ function renderWLA(items){
 // Laporan mengikuti FILTER yang sedang aktif di layar (kalau Anda filter
 // dulu by kategori/planner/status, laporan yang keluar juga sudah tersaring).
 // ---------------------------------------------------------------------
+// ---------------------------------------------------------------------
+// CETAK RINGKASAN 1 PEKERJAAN — beda dari export laporan lengkap (yang
+// khusus manager/admin/senior_planner): ini untuk siapa saja yang butuh
+// cetak/screenshot cepat SATU pekerjaan buat lapor ke atasan langsung.
+// ---------------------------------------------------------------------
+window.printSingleItem = function(){
+  const id = document.getElementById("itemId").value;
+  const item = allItems.find(i => i.id === id);
+  if(!item){ alert("Data pekerjaan tidak ditemukan."); return; }
+
+  const status = getItemStatus(item);
+  const total = getTotalProgress(item);
+  const STATUS_HEX_SINGLE = { belum:"#9CA3AF", progress:"#3C7A5C", selesai:"#2B6CB0", overdue:"#B84A3E", hold:"#C77D2E", cancel:"#5B6472" };
+
+  const checklistRows = STAGE_GROUPS.map(group => {
+    const rows = STAGE_TEMPLATE.filter(s => s.group === group).map(s => {
+      const done = item.stages && item.stages[s.key];
+      const detail = (item.stageDetails && item.stageDetails[s.key]) || null;
+      let detailText = "";
+      if(detail){
+        const fields = STAGE_DETAIL_FIELDS[s.key] || [];
+        detailText = fields.map(f => detail[f.key] ? `${f.label}: ${detail[f.key]}` : "").filter(Boolean).join(" · ");
+      }
+      return `
+        <tr>
+          <td style="width:22px;text-align:center;">${done ? "✓" : ""}</td>
+          <td>${escapeHtml(s.label)}</td>
+          <td style="font-size:10.5px;color:#5B6472;">${escapeHtml(detailText)}</td>
+        </tr>
+      `;
+    }).join("");
+    return `<tr><td colspan="3" style="background:#F0F0EE;font-weight:700;font-size:10.5px;text-transform:uppercase;">${escapeHtml(group)}</td></tr>${rows}`;
+  }).join("");
+
+  const now = new Date();
+  const generatedAt = now.toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' });
+  const fileTitle = `Ringkasan_${item.namaPekerjaan.replace(/[^a-z0-9]+/gi,"-").slice(0,40)}_${now.toISOString().slice(0,10)}`;
+
+  const dateInfo = total >= 100 && item.effectiveDate
+    ? `<b>Effective Date:</b> ${fmtDate(item.effectiveDate)}`
+    : (item.targetSelesai ? `<b>Target Selesai:</b> ${fmtDate(item.targetSelesai)}` : "");
+
+  const reportHtml = `
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<title>${escapeHtml(fileTitle)}</title>
+<style>
+  @page { size: A4; margin: 15mm; }
+  * { box-sizing: border-box; }
+  body{ font-family:'Arial','Helvetica',sans-serif; color:#1C2530; font-size:12px; margin:0; }
+  .hdr{ text-align:center; margin-bottom:16px; border-bottom:2px solid #1C2530; padding-bottom:10px; }
+  .hdr .company{ font-size:14px; font-weight:700; }
+  .hdr .sub{ font-size:11px; color:#5B6472; margin-top:2px; }
+  h1{ font-size:16px; margin:14px 0 6px; }
+  .metaGrid{ display:grid; grid-template-columns:1fr 1fr; gap:6px 20px; margin-bottom:14px; font-size:12px; }
+  .statusPill{ display:inline-block; padding:3px 10px; border-radius:12px; color:#fff; font-weight:700; font-size:11px; }
+  table{ width:100%; border-collapse:collapse; margin-bottom:14px; }
+  td, th{ border:1px solid #ccc; padding:5px 8px; text-align:left; font-size:11px; }
+  h2{ font-size:12.5px; border-left:3px solid #2B6CB0; padding-left:7px; margin:16px 0 6px; }
+  .richBox{ border:1px solid #ccc; padding:10px; border-radius:4px; font-size:11.5px; }
+  .footNote{ margin-top:18px; font-size:9.5px; color:#8A93A0; }
+</style>
+</head>
+<body>
+  <div class="hdr">
+    <div class="company">PT KILANG PERTAMINA BALIKPAPAN</div>
+    <div class="sub">Tim Planner - Technical Support</div>
+    <h1>Ringkasan Pekerjaan Pengadaan Kontrak</h1>
+  </div>
+
+  <div class="metaGrid">
+    <div><b>Nama Pekerjaan:</b> ${escapeHtml(item.namaPekerjaan)}</div>
+    <div><b>Status:</b> <span class="statusPill" style="background:${STATUS_HEX_SINGLE[status.key]}">${status.label} (${total}%)</span></div>
+    <div><b>Kategori:</b> ${escapeHtml(item.kategori || "—")}</div>
+    <div><b>Disiplin:</b> ${escapeHtml(item.disiplin || "—")}</div>
+    <div><b>Jenis Kontrak:</b> ${escapeHtml(item.contractType || "—")}</div>
+    <div><b>Planner:</b> ${escapeHtml(item.pic || "—")}</div>
+    <div>${dateInfo}</div>
+    <div><b>Dicetak:</b> ${generatedAt} oleh ${escapeHtml(currentName)}</div>
+  </div>
+
+  ${item.needsManagementSupport ? `
+    <h2>🚩 Perlu Keputusan Manajemen</h2>
+    <div class="richBox" style="border-color:#B84A3E;background:#FBEAE8;">${escapeHtml(item.managementSupportNote || "(tidak ada catatan detail)")}</div>
+  ` : ""}
+
+  ${item.statusKontrak ? `
+    <h2>${item.statusKontrak === "hold" ? "Hold" : "Cancelled"}</h2>
+    <div class="richBox">${escapeHtml(item.statusKontrakNote || "(tidak ada catatan)")}</div>
+  ` : ""}
+
+  ${item.dasarPengadaan ? `<h2>Dasar Pengadaan</h2><div class="richBox">${item.dasarPengadaan}</div>` : ""}
+
+  <h2>Checklist Progress</h2>
+  <table>
+    <thead><tr><th></th><th>Sub-Tahap</th><th>Detail</th></tr></thead>
+    <tbody>${checklistRows}</tbody>
+  </table>
+
+  ${item.progressNote ? `<h2>Catatan Progress</h2><div class="richBox">${escapeHtml(item.progressNote)}</div>` : ""}
+  ${item.keterangan ? `<h2>Keterangan</h2><div class="richBox">${escapeHtml(item.keterangan)}</div>` : ""}
+
+  <div class="footNote">Dicetak dari sistem Monitoring Perencanaan Pengadaan Kontrak.</div>
+</body>
+</html>
+  `;
+
+  const printWindow = window.open('', '_blank');
+  if(!printWindow){
+    alert("Browser memblokir pop-up. Izinkan pop-up untuk situs ini agar bisa mencetak.");
+    return;
+  }
+  printWindow.document.open();
+  printWindow.document.write(reportHtml);
+  printWindow.document.close();
+  printWindow.document.title = fileTitle;
+  printWindow.focus();
+  setTimeout(() => printWindow.print(), 350);
+};
+
 window.exportPdfReport = function(){
   const { items, filterDescription } = getFilteredItems();
 
@@ -3151,12 +3320,23 @@ function fmtDate(dateStr){
   return dateStr ? new Date(dateStr).toLocaleDateString('id-ID', {day:'2-digit',month:'short',year:'numeric'}) : "—";
 }
 
+window.setMyTasksFilter = function(mine){
+  document.getElementById("filterPlanner").value = mine ? currentName : "";
+  document.getElementById("myTasksBtnMine").classList.toggle("active", mine);
+  document.getElementById("myTasksBtnAll").classList.toggle("active", !mine);
+  window.onFilterChange();
+};
+
 window.resetFilters = function(){
   document.getElementById("searchKeyword").value = "";
   document.getElementById("filterKategori").value = "";
   document.getElementById("filterDisiplin").value = "";
   document.getElementById("filterPlanner").value = "";
   document.getElementById("filterSignal").value = "";
+  if(document.getElementById("myTasksToggle").style.display !== "none"){
+    document.getElementById("myTasksBtnMine").classList.remove("active");
+    document.getElementById("myTasksBtnAll").classList.add("active");
+  }
   window.onFilterChange();
 };
 
@@ -3429,6 +3609,7 @@ window.openAddModal = function(){
   document.getElementById("modalErr").textContent = "";
   document.getElementById("targetEditHint").textContent = "";
   document.getElementById("btnDelete").style.display = "none";
+  document.getElementById("btnPrintItem").style.display = "none";
   renderStageChecklist(null, null);
   setFieldPermissions(false);
   document.getElementById("itemModal").classList.add("show");
@@ -3506,6 +3687,7 @@ window.openEditModal = function(id){
 
   document.getElementById("btnDelete").style.display = ["planner", "admin", "senior_planner"].includes(currentRole) ? "inline-flex" : "none";
   document.getElementById("btnSaveItem").style.display = currentRole === "viewer" ? "none" : "inline-flex";
+  document.getElementById("btnPrintItem").style.display = "inline-flex";
   setFieldPermissions(true);
   document.getElementById("itemModal").classList.add("show");
 };
