@@ -2937,7 +2937,7 @@ window.renderTable = function(){
     return `
       <tr class="${overdue ? 'rowOverdue' : ''}">
         <td>
-          <div class="jobname">${escapeHtml(item.namaPekerjaan)}${relativeUpdateBadge(item)}${isStuck(item) ? `<span class="stuckBadge">${getAgeDays(item)} Hari Tanpa Progress</span>` : ""}${item.needsManagementSupport ? `<span class="mgmtFlagBadge">🚩 Perlu Manajemen</span>` : ""}</div>
+          <div class="jobname">${escapeHtml(item.namaPekerjaan)}${relativeUpdateBadge(item)}${isStuck(item) ? `<span class="stuckBadge">${getAgeDays(item)} Hari Tanpa Progress</span>` : ""}${item.needsManagementSupport ? `<span class="mgmtFlagBadge">🚩 Need Support Management</span>` : ""}</div>
           ${item.progressNote ? `<div class="progNote">${escapeHtml(item.progressNote)}</div>` : ""}
         </td>
         <td>
