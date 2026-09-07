@@ -41,6 +41,58 @@
     background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
     padding:16px 18px;margin-bottom:16px;
   }
+  .statusOverviewHeader{
+    display:flex;justify-content:space-between;align-items:baseline;
+    margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid #F0F0EE;
+  }
+  .statusOverviewHeader .totalCount .num{
+    font-family:'IBM Plex Mono',monospace;font-size:24px;font-weight:700;color:var(--ink);
+  }
+  .statusOverviewHeader .totalCount .lbl{
+    font-size:11.5px;color:var(--ink-soft);margin-left:8px;
+    text-transform:uppercase;letter-spacing:.04em;
+  }
+  .statusOverviewHeader .totalCountSub{font-size:11px;color:var(--ink-soft);}
+
+  /* ===== ESCALATION: butuh keputusan manajemen ===== */
+  .escalationBox{
+    border:1px solid var(--red-soft);background:var(--red-soft);
+    border-radius:8px;padding:12px 14px;margin-bottom:16px;
+  }
+  .escalationCheck{display:flex;align-items:center;gap:9px;cursor:pointer;font-size:13px;font-weight:500;color:var(--red);}
+  .escalationCheck input[type=checkbox]{width:16px;height:16px;accent-color:var(--red);cursor:pointer;}
+  .escalationBox textarea{
+    width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;
+    font-family:inherit;font-size:13px;resize:vertical;background:#fff;box-sizing:border-box;
+  }
+
+  .mgmtAlertBanner{
+    background:var(--red-soft);border:1px solid var(--red);border-radius:var(--radius);
+    padding:14px 18px;margin-bottom:16px;
+  }
+  .mgmtAlertBanner .mgmtAlertHeader{
+    display:flex;align-items:center;gap:8px;font-weight:600;color:var(--red);
+    font-size:13.5px;margin-bottom:10px;
+  }
+  .mgmtAlertBanner .mgmtAlertHeader .badgeCount{
+    background:var(--red);color:#fff;font-family:'IBM Plex Mono',monospace;
+    font-size:11px;padding:1px 8px;border-radius:10px;
+  }
+  .mgmtAlertItem{
+    background:#fff;border-radius:6px;padding:9px 12px;margin-bottom:6px;cursor:pointer;
+    border:1px solid rgba(184,74,62,0.25);
+  }
+  .mgmtAlertItem:last-child{margin-bottom:0;}
+  .mgmtAlertItem:hover{background:#FFF8F7;}
+  .mgmtAlertItem .mgmtAlertName{font-weight:500;font-size:13px;color:var(--ink);}
+  .mgmtAlertItem .mgmtAlertMeta{font-size:11.5px;color:var(--ink-soft);margin-top:2px;}
+  .mgmtAlertItem .mgmtAlertNote{font-size:12px;color:var(--ink-soft);margin-top:4px;font-style:italic;}
+
+  .mgmtFlagBadge{
+    display:inline-block;font-size:10px;font-family:'IBM Plex Mono',monospace;font-weight:600;
+    color:#fff;background:var(--red);padding:1px 7px;border-radius:8px;margin-left:8px;
+    vertical-align:middle;text-transform:uppercase;letter-spacing:.02em;
+  }
   .stackedBar{
     display:flex;height:14px;border-radius:7px;overflow:hidden;margin-bottom:12px;
     background:#EFEFEC;
@@ -606,6 +658,7 @@
     <!-- ===== VIEW: DAFTAR PEKERJAAN (+ ringkasan kinerja) ===== -->
     <div id="viewList">
 
+    <div id="managementAlertContainer"></div>
     <div class="statusOverviewCard" id="statusOverviewCard"></div>
 
     <div class="toolbar">
@@ -638,6 +691,7 @@
           <option value="selesai">Selesai</option>
           <option value="overdue">Overdue</option>
           <option value="expiring">Kontrak Mendekati Habis</option>
+          <option value="needsManagement">🚩 Perlu Keputusan Manajemen</option>
         </select>
         <button class="btn btn-ghost" onclick="window.resetFilters()">Reset</button>
       </div>
@@ -996,6 +1050,18 @@
       <input type="text" id="fKet" placeholder="mis. [Closed], User Purchase, Repeat Order, dll">
     </div>
 
+    <div class="escalationBox">
+      <label class="escalationCheck">
+        <input type="checkbox" id="fNeedsManagement" onchange="window.onNeedsManagementChange()">
+        <span>Terkendala — butuh keputusan/dukungan Manajemen (strategic)</span>
+      </label>
+      <div class="field" id="managementNoteWrap" style="display:none;margin-top:8px;">
+        <label>Detail kendala / keputusan yang dibutuhkan</label>
+        <textarea id="fManagementNote" rows="2" placeholder="mis. Menunggu keputusan alokasi budget tambahan dari Manajemen"></textarea>
+      </div>
+      <div class="hint" id="managementFlaggedHint" style="margin-top:6px;"></div>
+    </div>
+
     <div class="errMsg" id="modalErr"></div>
 
     <div class="modalFooter">
@@ -1165,6 +1231,10 @@ window.onContractTypeChange = function(){
 window.onDisiplinChange = function(){
   const v = document.getElementById("fDisiplin").value;
   document.getElementById("disiplinLainnyaWrap").style.display = v === "Lainnya" ? "block" : "none";
+};
+window.onNeedsManagementChange = function(){
+  const checked = document.getElementById("fNeedsManagement").checked;
+  document.getElementById("managementNoteWrap").style.display = checked ? "block" : "none";
 };
 
 // ---------------------------------------------------------------------
@@ -1704,7 +1774,8 @@ function stopIdleWatcher(){
 const FIELD_LABELS = {
   namaPekerjaan: "Nama Pekerjaan", kategori: "Kategori", contractType: "Jenis Kontrak", disiplin: "Disiplin",
   pic: "Planner", targetSelesai: "Target Selesai", effectiveDate: "Effective Date",
-  progressNote: "Catatan Progress", keterangan: "Keterangan", dasarPengadaan: "Dasar Pengadaan"
+  progressNote: "Catatan Progress", keterangan: "Keterangan", dasarPengadaan: "Dasar Pengadaan",
+  managementSupportNote: "Detail Kendala Manajemen"
 };
 
 async function logActivity(itemId, itemName, action, changesSummary){
@@ -1738,6 +1809,11 @@ function buildChangeSummary(oldItem, newPayload){
   }
   if(JSON.stringify(newPayload.stageDetails || {}) !== JSON.stringify(oldItem.stageDetails || {})){
     parts.push("Detail sub-tahap diperbarui");
+  }
+  if(!!newPayload.needsManagementSupport !== !!oldItem.needsManagementSupport){
+    parts.push(newPayload.needsManagementSupport
+      ? "🚩 Ditandai butuh keputusan Manajemen"
+      : "Tanda butuh keputusan Manajemen dicabut");
   }
   return parts.length ? parts.join(" · ") : "Tidak ada perubahan terdeteksi";
 }
@@ -2178,10 +2254,51 @@ window.goFilterSignal = function(sig){
 // Catatan: ini gambaran KONDISI SAAT INI, bukan tren dari waktu ke waktu —
 // app belum menyimpan snapshot historis harian.
 // ---------------------------------------------------------------------
+// ---------------------------------------------------------------------
+// BANNER NOTIFIKASI: "Perlu Keputusan Manajemen" — SELALU pakai SEMUA
+// data (allItems), TIDAK ikut filter yang sedang aktif — supaya perhatian
+// manajemen tidak "hilang" hanya karena seseorang kebetulan sedang
+// memfilter tabel ke kategori/planner lain. Hanya tampil kalau ADA yang
+// perlu diperhatikan (tidak ada state kosong yang mengganggu).
+// ---------------------------------------------------------------------
+function renderManagementAlertBanner(){
+  const flagged = allItems.filter(i => i.needsManagementSupport);
+  if(flagged.length === 0) return "";
+
+  flagged.sort((a, b) => tsMillis(b.managementSupportFlaggedAt) - tsMillis(a.managementSupportFlaggedAt));
+
+  const itemsHtml = flagged.map(i => {
+    const ms = tsMillis(i.managementSupportFlaggedAt);
+    const days = ms ? Math.floor((Date.now() - ms) / 86400000) : null;
+    return `
+      <div class="mgmtAlertItem" onclick='window.switchView("list");window.openEditModal(${JSON.stringify(i.id)})'>
+        <div class="mgmtAlertName">${escapeHtml(i.namaPekerjaan)}</div>
+        <div class="mgmtAlertMeta">
+          Planner: ${escapeHtml(i.pic || "—")}${days !== null ? ` · Menunggu ${days} hari` : ""}
+        </div>
+        ${i.managementSupportNote ? `<div class="mgmtAlertNote">"${escapeHtml(i.managementSupportNote)}"</div>` : ""}
+      </div>
+    `;
+  }).join("");
+
+  return `
+    <div class="mgmtAlertBanner">
+      <div class="mgmtAlertHeader">
+        🚩 Perlu Keputusan / Dukungan Manajemen
+        <span class="badgeCount">${flagged.length}</span>
+      </div>
+      ${itemsHtml}
+    </div>
+  `;
+}
+
 function renderStatusOverview(){
+  document.getElementById("managementAlertContainer").innerHTML = renderManagementAlertBanner();
+
   const el = document.getElementById("statusOverviewCard");
   const { items } = getFilteredItems();
-  const total = items.length || 1; // hindari div/0
+  const realTotal = items.length;
+  const total = realTotal || 1; // hindari div/0 khusus untuk hitung persentase
   const counts = { belum:0, progress:0, selesai:0, overdue:0 };
   items.forEach(i => { counts[getItemStatus(i).key]++; });
   const expiringCount = items.filter(isExpiringSoon).length;
@@ -2226,6 +2343,10 @@ function renderStatusOverview(){
   }
 
   el.innerHTML = `
+    <div class="statusOverviewHeader">
+      <div class="totalCount"><span class="num">${realTotal}</span><span class="lbl">Total Pekerjaan</span></div>
+      <div class="totalCountSub">100% = ${realTotal} pekerjaan sesuai filter saat ini</div>
+    </div>
     <div class="stackedBar">${segHtml}</div>
     <div class="legendRow">${chipsHtml}${expiringChip}</div>
     <button class="dashDetailToggle" id="dashDetailToggleBtn" onclick="window.toggleDashDetail()">Lihat rincian kinerja per kategori & planner ▾</button>
@@ -2681,11 +2802,12 @@ function getFilteredItems(){
   if(fSignal === "selesai") items = items.filter(i => getItemStatus(i).key === "selesai");
   if(fSignal === "overdue") items = items.filter(i => getItemStatus(i).key === "overdue");
   if(fSignal === "expiring") items = items.filter(isExpiringSoon);
+  if(fSignal === "needsManagement") items = items.filter(i => i.needsManagementSupport);
   if(fSearch){
     items = items.filter(i => {
       const haystack = [
         i.namaPekerjaan, i.pic, i.kategori, i.contractType, i.disiplin,
-        i.progressNote, i.keterangan, stripHtmlForSearch(i.dasarPengadaan)
+        i.progressNote, i.keterangan, stripHtmlForSearch(i.dasarPengadaan), i.managementSupportNote
       ].filter(Boolean).join(" ").toLowerCase();
       return haystack.includes(fSearch);
     });
@@ -2697,7 +2819,7 @@ function getFilteredItems(){
   if(fDisiplin) filterLabels.push(`Disiplin: ${fDisiplin}`);
   if(fPlanner) filterLabels.push(`Planner: ${fPlanner}`);
   if(fSignal){
-    const map = { belum:"Belum Dimulai", progress:"In Progress", selesai:"Selesai", overdue:"Overdue", expiring:"Kontrak Mendekati Habis" };
+    const map = { belum:"Belum Dimulai", progress:"In Progress", selesai:"Selesai", overdue:"Overdue", expiring:"Kontrak Mendekati Habis", needsManagement:"Perlu Keputusan Manajemen" };
     filterLabels.push(`Status: ${map[fSignal] || fSignal}`);
   }
 
@@ -2815,7 +2937,7 @@ window.renderTable = function(){
     return `
       <tr class="${overdue ? 'rowOverdue' : ''}">
         <td>
-          <div class="jobname">${escapeHtml(item.namaPekerjaan)}${relativeUpdateBadge(item)}${isStuck(item) ? `<span class="stuckBadge">${getAgeDays(item)} Hari Tanpa Progress</span>` : ""}</div>
+          <div class="jobname">${escapeHtml(item.namaPekerjaan)}${relativeUpdateBadge(item)}${isStuck(item) ? `<span class="stuckBadge">${getAgeDays(item)} Hari Tanpa Progress</span>` : ""}${item.needsManagementSupport ? `<span class="mgmtFlagBadge">🚩 Perlu Manajemen</span>` : ""}</div>
           ${item.progressNote ? `<div class="progNote">${escapeHtml(item.progressNote)}</div>` : ""}
         </td>
         <td>
@@ -2901,6 +3023,10 @@ window.openAddModal = function(){
   document.getElementById("fProgressNote").value = "";
   document.getElementById("fDasarPengadaan").innerHTML = "";
   document.getElementById("fKet").value = "";
+  document.getElementById("fNeedsManagement").checked = false;
+  document.getElementById("fManagementNote").value = "";
+  document.getElementById("managementNoteWrap").style.display = "none";
+  document.getElementById("managementFlaggedHint").textContent = "";
   document.getElementById("modalErr").textContent = "";
   document.getElementById("targetEditHint").textContent = "";
   document.getElementById("btnDelete").style.display = "none";
@@ -2951,6 +3077,16 @@ window.openEditModal = function(id){
   document.getElementById("fProgressNote").value = item.progressNote || "";
   document.getElementById("fDasarPengadaan").innerHTML = item.dasarPengadaan || "";
   document.getElementById("fKet").value = item.keterangan || "";
+  document.getElementById("fNeedsManagement").checked = !!item.needsManagementSupport;
+  document.getElementById("fManagementNote").value = item.managementSupportNote || "";
+  document.getElementById("managementNoteWrap").style.display = item.needsManagementSupport ? "block" : "none";
+  const flagHint = document.getElementById("managementFlaggedHint");
+  if(item.needsManagementSupport && item.managementSupportFlaggedAt && item.managementSupportFlaggedAt.seconds){
+    const days = Math.floor((Date.now() - item.managementSupportFlaggedAt.seconds * 1000) / 86400000);
+    flagHint.textContent = `Ditandai sejak ${days} hari lalu.`;
+  } else {
+    flagHint.textContent = "";
+  }
   document.getElementById("modalErr").textContent = "";
   renderStageChecklist(item.stages, item.stageDetails);
 
@@ -2970,7 +3106,7 @@ function setFieldPermissions(isEdit){
   const managerOnly = currentRole === "manager" && isEdit;
   const readOnlyAll = isViewer || managerOnly;
   const fields = ["fNama","fKategori","fKategoriLainnya","fContractType","fContractTypeLainnya","fDisiplin","fDisiplinLainnya",
-                  "fPic","fEffective","fProgressNote","fKet"];
+                  "fPic","fEffective","fProgressNote","fKet","fNeedsManagement","fManagementNote"];
   fields.forEach(id => { document.getElementById(id).disabled = readOnlyAll; });
   document.querySelectorAll("#stageChecklist input[type=checkbox]").forEach(cb => { cb.disabled = readOnlyAll; });
   document.querySelectorAll(".stageDetailPanel input, .stageDetailPanel textarea, .stageDetailPanel select").forEach(el => { el.disabled = readOnlyAll; });
@@ -3025,6 +3161,9 @@ window.saveItem = async function(){
     const oldStages = existingItem ? existingItem.stages : null;
     const stagesChanged = !oldStages || STAGE_TEMPLATE.some(s => !!oldStages[s.key] !== !!newStages[s.key]);
 
+    const needsManagement = document.getElementById("fNeedsManagement").checked;
+    const wasNeedsManagement = existingItem ? !!existingItem.needsManagementSupport : false;
+
     const payload = {
       namaPekerjaan: nama,
       kategori: kategori,
@@ -3036,10 +3175,21 @@ window.saveItem = async function(){
       progressNote: document.getElementById("fProgressNote").value.trim(),
       dasarPengadaan: sanitizeRichHtml(document.getElementById("fDasarPengadaan").innerHTML.trim()),
       keterangan: document.getElementById("fKet").value.trim(),
+      needsManagementSupport: needsManagement,
+      managementSupportNote: needsManagement ? document.getElementById("fManagementNote").value.trim() : "",
       stages: newStages,
       stageDetails: getStageDetailsFromForm(),
       updatedAt: serverTimestamp()
     };
+    // Catat KAPAN PERTAMA KALI ditandai (bukan tiap kali disimpan) — supaya
+    // "sudah X hari menunggu keputusan" akurat. Kalau baru dicentang
+    // sekarang (sebelumnya belum), catat waktu baru. Kalau dilepas
+    // centangnya, hapus jejak waktunya (mulai dari nol lagi kalau ditandai ulang nanti).
+    if(needsManagement && !wasNeedsManagement){
+      payload.managementSupportFlaggedAt = serverTimestamp();
+    } else if(!needsManagement && wasNeedsManagement){
+      payload.managementSupportFlaggedAt = null;
+    }
     // progressUpdatedAt HANYA disentuh kalau checklist sub-tahap benar-benar
     // berubah — dipakai untuk analisis "usia macet" (WLA). Kalau tidak
     // disertakan di payload, nilai lama di Firestore tetap utuh (updateDoc
