@@ -610,7 +610,7 @@
 
     <div class="toolbar">
       <div class="filters">
-        <input type="text" id="searchKeyword" placeholder="Cari apa saja..." oninput="window.onFilterChange()" style="padding:7px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;font-family:inherit;min-width:200px;">
+        <input type="text" id="searchKeyword" placeholder="Cari.." oninput="window.onFilterChange()" style="padding:7px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;font-family:inherit;min-width:200px;">
         <select id="filterKategori" onchange="window.onFilterChange()">
           <option value="">Semua Kategori</option>
           <option>Maintenance</option>
@@ -618,6 +618,14 @@
           <option>Take Over</option>
           <option>Tools</option>
           <option>Training</option>
+          <option>Lainnya</option>
+        </select>
+        <select id="filterDisiplin" onchange="window.onFilterChange()">
+          <option value="">Semua Disiplin</option>
+          <option>Static</option>
+          <option>Rotating</option>
+          <option>Instrument</option>
+          <option>Electrical</option>
           <option>Lainnya</option>
         </select>
         <select id="filterPlanner" onchange="window.onFilterChange()">
@@ -795,6 +803,8 @@
           <tr><td class="mono">H–S</td><td>12 kolom sub-tahap berurutan — isi APA SAJA (selain kosong) kalau sudah selesai, KOSONGKAN kalau belum: Searching, Quotation, Lingkup (KAK), OE, TKDN, Izin Metode, Berkas Procurement, Pre-Bid Meeting, Evaluasi & Negosiasi, LHP, Penetapan Pemenang, Kontrak/PO</td></tr>
           <tr><td class="mono">T</td><td>Boleh dikosongkan — app hitung ulang otomatis dari kolom H–S</td></tr>
           <tr><td class="mono">U</td><td>Catatan Akhir / Keterangan (bebas teks)</td></tr>
+          <tr><td class="mono">V</td><td>Disiplin — opsional (idealnya: Static / Rotating / Instrument / Electrical)</td></tr>
+          <tr><td class="mono">W</td><td>Dasar Pengadaan — opsional, teks polos (tidak bisa bawa format tebal/miring dari Excel)</td></tr>
         </tbody>
       </table>
     </div>
@@ -935,6 +945,23 @@
 
     <div class="modalRow2">
       <div class="field">
+        <label>Disiplin</label>
+        <select id="fDisiplin" onchange="window.onDisiplinChange()">
+          <option>Static</option>
+          <option>Rotating</option>
+          <option>Instrument</option>
+          <option>Electrical</option>
+          <option>Lainnya</option>
+        </select>
+      </div>
+      <div class="field" id="disiplinLainnyaWrap" style="display:none;">
+        <label>Disiplin (sebutkan)</label>
+        <input type="text" id="fDisiplinLainnya">
+      </div>
+    </div>
+
+    <div class="modalRow2">
+      <div class="field">
         <label>PIC (Planner)</label>
         <input type="text" id="fPic" placeholder="Nama planner">
       </div>
@@ -1052,7 +1079,9 @@ const STAGE_DETAIL_FIELDS = {
     { key:"lingkupUtama", label:"Lingkup Utama", type:"text" }
   ],
   oe: [
-    { key:"polaPikir", label:"Pola Pikir OE", type:"select", options:["Last PO","Quotation Vendor"] }
+    { key:"polaPikir", label:"Pola Pikir OE", type:"select", options:["Last PO","Quotation Vendor"] },
+    { key:"nilaiOE", label:"Nilai OE", type:"text" },
+    { key:"note", label:"Note", type:"text" }
   ],
   izinMetode: [
     { key:"noSurat", label:"Nomor Surat Izin Prinsip", type:"text" },
@@ -1132,6 +1161,10 @@ window.onKategoriChange = function(){
 window.onContractTypeChange = function(){
   const v = document.getElementById("fContractType").value;
   document.getElementById("contractTypeLainnyaWrap").style.display = v === "Lainnya" ? "block" : "none";
+};
+window.onDisiplinChange = function(){
+  const v = document.getElementById("fDisiplin").value;
+  document.getElementById("disiplinLainnyaWrap").style.display = v === "Lainnya" ? "block" : "none";
 };
 
 // ---------------------------------------------------------------------
@@ -1669,7 +1702,7 @@ function stopIdleWatcher(){
 // melakukan perubahan, tapi HANYA admin yang bisa membacanya (rules).
 // ---------------------------------------------------------------------
 const FIELD_LABELS = {
-  namaPekerjaan: "Nama Pekerjaan", kategori: "Kategori", contractType: "Jenis Kontrak",
+  namaPekerjaan: "Nama Pekerjaan", kategori: "Kategori", contractType: "Jenis Kontrak", disiplin: "Disiplin",
   pic: "Planner", targetSelesai: "Target Selesai", effectiveDate: "Effective Date",
   progressNote: "Catatan Progress", keterangan: "Keterangan", dasarPengadaan: "Dasar Pengadaan"
 };
@@ -2607,6 +2640,7 @@ function fmtDate(dateStr){
 window.resetFilters = function(){
   document.getElementById("searchKeyword").value = "";
   document.getElementById("filterKategori").value = "";
+  document.getElementById("filterDisiplin").value = "";
   document.getElementById("filterPlanner").value = "";
   document.getElementById("filterSignal").value = "";
   window.onFilterChange();
@@ -2633,12 +2667,14 @@ window.onPageSizeChange = function(){
 
 function getFilteredItems(){
   const fKategori = document.getElementById("filterKategori").value;
+  const fDisiplin = document.getElementById("filterDisiplin").value;
   const fPlanner = document.getElementById("filterPlanner").value;
   const fSignal = document.getElementById("filterSignal").value;
   const fSearch = (document.getElementById("searchKeyword").value || "").trim().toLowerCase();
 
   let items = [...allItems];
   if(fKategori) items = items.filter(i => i.kategori === fKategori);
+  if(fDisiplin) items = items.filter(i => i.disiplin === fDisiplin);
   if(fPlanner) items = items.filter(i => i.pic === fPlanner);
   if(fSignal === "belum") items = items.filter(i => getItemStatus(i).key === "belum");
   if(fSignal === "progress") items = items.filter(i => getItemStatus(i).key === "progress");
@@ -2648,7 +2684,7 @@ function getFilteredItems(){
   if(fSearch){
     items = items.filter(i => {
       const haystack = [
-        i.namaPekerjaan, i.pic, i.kategori, i.contractType,
+        i.namaPekerjaan, i.pic, i.kategori, i.contractType, i.disiplin,
         i.progressNote, i.keterangan, stripHtmlForSearch(i.dasarPengadaan)
       ].filter(Boolean).join(" ").toLowerCase();
       return haystack.includes(fSearch);
@@ -2658,6 +2694,7 @@ function getFilteredItems(){
   const filterLabels = [];
   if(fSearch) filterLabels.push(`Pencarian: "${fSearch}"`);
   if(fKategori) filterLabels.push(`Kategori: ${fKategori}`);
+  if(fDisiplin) filterLabels.push(`Disiplin: ${fDisiplin}`);
   if(fPlanner) filterLabels.push(`Planner: ${fPlanner}`);
   if(fSignal){
     const map = { belum:"Belum Dimulai", progress:"In Progress", selesai:"Selesai", overdue:"Overdue", expiring:"Kontrak Mendekati Habis" };
@@ -2781,7 +2818,10 @@ window.renderTable = function(){
           <div class="jobname">${escapeHtml(item.namaPekerjaan)}${relativeUpdateBadge(item)}${isStuck(item) ? `<span class="stuckBadge">${getAgeDays(item)} Hari Tanpa Progress</span>` : ""}</div>
           ${item.progressNote ? `<div class="progNote">${escapeHtml(item.progressNote)}</div>` : ""}
         </td>
-        <td><span class="pill ${pillClass}">${escapeHtml(item.kategori || "—")}</span></td>
+        <td>
+          <span class="pill ${pillClass}">${escapeHtml(item.kategori || "—")}</span>
+          ${item.disiplin ? `<div class="hint" style="margin-top:3px;">${escapeHtml(item.disiplin)}</div>` : ""}
+        </td>
         <td>${escapeHtml(item.pic || "—")}</td>
         <td>
           <div class="progWrap">
@@ -2821,8 +2861,10 @@ function escapeHtml(str){
 function resetLainnyaWraps(){
   document.getElementById("kategoriLainnyaWrap").style.display = "none";
   document.getElementById("contractTypeLainnyaWrap").style.display = "none";
+  document.getElementById("disiplinLainnyaWrap").style.display = "none";
   document.getElementById("fKategoriLainnya").value = "";
   document.getElementById("fContractTypeLainnya").value = "";
+  document.getElementById("fDisiplinLainnya").value = "";
 }
 
 window.richExec = function(cmd){
@@ -2851,6 +2893,7 @@ window.openAddModal = function(){
   document.getElementById("fNama").value = "";
   document.getElementById("fKategori").value = "Maintenance";
   document.getElementById("fContractType").value = "All in";
+  document.getElementById("fDisiplin").value = "Static";
   resetLainnyaWraps();
   document.getElementById("fPic").value = ["planner", "senior_planner"].includes(currentRole) ? currentName : "";
   document.getElementById("fTarget").value = "";
@@ -2891,6 +2934,17 @@ window.openEditModal = function(id){
     document.getElementById("contractTypeLainnyaWrap").style.display = "block";
   }
 
+  const disiplinDikenal = ["Static","Rotating","Instrument","Electrical"];
+  if(disiplinDikenal.includes(item.disiplin)){
+    document.getElementById("fDisiplin").value = item.disiplin;
+  } else if(item.disiplin){
+    document.getElementById("fDisiplin").value = "Lainnya";
+    document.getElementById("fDisiplinLainnya").value = item.disiplin;
+    document.getElementById("disiplinLainnyaWrap").style.display = "block";
+  } else {
+    document.getElementById("fDisiplin").value = "Static";
+  }
+
   document.getElementById("fPic").value = item.pic || "";
   document.getElementById("fTarget").value = item.targetSelesai || "";
   document.getElementById("fEffective").value = item.effectiveDate || "";
@@ -2915,7 +2969,7 @@ function setFieldPermissions(isEdit){
   const isViewer = currentRole === "viewer";
   const managerOnly = currentRole === "manager" && isEdit;
   const readOnlyAll = isViewer || managerOnly;
-  const fields = ["fNama","fKategori","fKategoriLainnya","fContractType","fContractTypeLainnya",
+  const fields = ["fNama","fKategori","fKategoriLainnya","fContractType","fContractTypeLainnya","fDisiplin","fDisiplinLainnya",
                   "fPic","fEffective","fProgressNote","fKet"];
   fields.forEach(id => { document.getElementById(id).disabled = readOnlyAll; });
   document.querySelectorAll("#stageChecklist input[type=checkbox]").forEach(cb => { cb.disabled = readOnlyAll; });
@@ -2963,6 +3017,8 @@ window.saveItem = async function(){
     if(kategori === "Lainnya") kategori = document.getElementById("fKategoriLainnya").value.trim() || "Lainnya";
     let contractType = document.getElementById("fContractType").value;
     if(contractType === "Lainnya") contractType = document.getElementById("fContractTypeLainnya").value.trim() || "Lainnya";
+    let disiplin = document.getElementById("fDisiplin").value;
+    if(disiplin === "Lainnya") disiplin = document.getElementById("fDisiplinLainnya").value.trim() || "Lainnya";
 
     const newStages = getStagesFromForm();
     const existingItem = id ? allItems.find(i => i.id === id) : null;
@@ -2973,6 +3029,7 @@ window.saveItem = async function(){
       namaPekerjaan: nama,
       kategori: kategori,
       contractType: contractType,
+      disiplin: disiplin,
       pic: document.getElementById("fPic").value.trim(),
       targetSelesai: targetVal,
       effectiveDate: document.getElementById("fEffective").value,
@@ -3027,6 +3084,7 @@ window.deleteItem = async function(){
 // Planner": data mulai baris ke-6, kolom B..U (12 kolom H..S = sub-tahap).
 // ---------------------------------------------------------------------
 const KATEGORI_KNOWN = ["Maintenance","OYSP","Take Over","Tools","Training"];
+const DISIPLIN_KNOWN = ["Static","Rotating","Instrument","Electrical"];
 const CONTRACT_TYPE_MAP = {
   "all in": "All in", "material": "Material", "jasa": "Jasa",
   "unit rate": "Unit Rate", "empowerment": "Empowerment",
@@ -3038,6 +3096,13 @@ function normalizeKategori(raw){
   const trimmed = String(raw).trim();
   const match = KATEGORI_KNOWN.find(k => k.toLowerCase() === trimmed.toLowerCase());
   return match || trimmed; // kalau tidak dikenal, simpan apa adanya (akan tampil sbg "Lainnya" di form)
+}
+
+function normalizeDisiplin(raw){
+  if(!raw) return "";
+  const trimmed = String(raw).trim();
+  const match = DISIPLIN_KNOWN.find(k => k.toLowerCase() === trimmed.toLowerCase());
+  return match || trimmed;
 }
 
 function normalizeContractType(raw){
@@ -3083,20 +3148,26 @@ window.downloadImportTemplate = function(){
   // Baris 1-2: judul & catatan (bebas, tidak dibaca importer).
   // Baris 5: header kolom (cosmetic, importer baca POSISI bukan teksnya).
   // Baris 6: contoh data.
+  // Kolom V (Disiplin) dan W (Dasar Pengadaan) ditambah DI AKHIR (bukan
+  // disisip di tengah) supaya file format lama (tanpa 2 kolom ini) tetap
+  // kompatibel — posisi kolom B-U tidak boleh berubah/geser.
   const aoa = [
     ["TEMPLATE IMPORT — MONITORING PERENCANAAN PENGADAAN KONTRAK"],
-    ["Data mulai dibaca dari baris 6. Baris 1-5 bebas, TIDAK dibaca sistem. Jangan geser posisi kolom B-U."],
+    ["Data mulai dibaca dari baris 6. Baris 1-5 bebas, TIDAK dibaca sistem. Jangan geser posisi kolom B-U. Kolom V & W opsional (boleh dikosongkan)."],
     [],
     [],
     ["No","Task Description","Planner","Category","Contract Type","Effective Date","Progress",
      "Searching (7)","Quotation (7)","Lingkup KAK (10)","OE (15)","TKDN (12)","Izin Metode (11)","Berkas Procurement (5)",
-     "Pre-Bid (8)","Evaluasi & Negosiasi (10)","LHP (5)","Penetapan Pemenang (5)","Kontrak/PO (5)","Total (otomatis)","Catatan Akhir"],
+     "Pre-Bid (8)","Evaluasi & Negosiasi (10)","LHP (5)","Penetapan Pemenang (5)","Kontrak/PO (5)","Total (otomatis)","Catatan Akhir",
+     "Disiplin (opsional)","Dasar Pengadaan (opsional, teks polos)"],
     [1,"Contoh: Pengadaan Jasa Inspeksi Bejana Tekan Unit 3","Nama Planner","Maintenance","Jasa","2027-06-30",
-     "Pembuatan Lingkup dan OE",7,7,10,"","","","","","","","","","",""]
+     "Pembuatan Lingkup dan OE",7,7,10,"","","","","","","","","","","",
+     "Static","Memo No. 001/MEMO/2027 tanggal 5 Januari 2027 perihal permintaan inspeksi"]
   ];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws["!cols"] = [{wch:5},{wch:34},{wch:16},{wch:13},{wch:13},{wch:13},{wch:20},
-                 {wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:14},{wch:20}];
+                 {wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:9},{wch:14},{wch:20},
+                 {wch:13},{wch:34}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Template");
   XLSX.writeFile(wb, "Template_Import_Pengadaan.xlsx");
@@ -3136,6 +3207,10 @@ window.handleExcelImport = function(event){
         const pic = row[2] ? String(row[2]).trim() : "";
         const progressNote = row[6] ? String(row[6]).trim() : "";
         const closeNote = row[20] ? String(row[20]).trim() : "";
+        // Kolom V (index 21) & W (index 22) — DITAMBAHKAN BELAKANGAN, jadi
+        // file format lama yang belum punya kolom ini otomatis dapat "".
+        const disiplin = normalizeDisiplin(row[21]);
+        const dasarPengadaan = row[22] ? String(row[22]).trim() : "";
 
         const effParsed = safeParseDate(row[5]);
         let keterangan = closeNote;
@@ -3155,10 +3230,12 @@ window.handleExcelImport = function(event){
           namaPekerjaan: nama,
           kategori,
           contractType,
+          disiplin,
           pic,
           targetSelesai: "",
           effectiveDate: effParsed.iso,
           progressNote,
+          dasarPengadaan,
           keterangan,
           stages,
           createdAt: serverTimestamp(),
