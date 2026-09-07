@@ -729,6 +729,11 @@
       </select>
       <div class="hint">Role Manager/Admin/Senior Planner hanya bisa dibuat langsung oleh admin.</div>
     </div>
+    <div class="field">
+      <label for="regPicNameHint">Nama Anda di Daftar Pekerjaan (kalau berbeda)</label>
+      <input type="text" id="regPicNameHint" placeholder="Isi HANYA kalau nama Anda di kolom Planner beda dari nama di atas">
+      <div class="hint">Kosongkan kalau nama di atas sudah sama persis dengan yang tertulis di kolom Planner pada pekerjaan yang sudah ada.</div>
+    </div>
     <button class="btn btn-primary btn-block" onclick="window.doRegister()">Daftar</button>
     <div class="errMsg" id="registerErr"></div>
     <div class="hint" style="text-align:center;margin-top:6px;">Akun baru perlu disetujui sebelum bisa dipakai.</div>
@@ -899,7 +904,7 @@
         <h3>Menunggu Persetujuan</h3>
         <div class="tableWrap">
           <table>
-            <thead><tr><th>Nama</th><th>Email</th><th>Tetapkan Role</th><th></th></tr></thead>
+            <thead><tr><th>Nama</th><th>Email</th><th>Nama PIC (Daftar Pekerjaan)</th><th>Tetapkan Role</th><th></th></tr></thead>
             <tbody id="pendingTableBody"></tbody>
           </table>
         </div>
@@ -909,7 +914,7 @@
         <h3>User Aktif</h3>
         <div class="tableWrap">
           <table>
-            <thead><tr><th>Nama</th><th>Email</th><th>Role</th><th></th></tr></thead>
+            <thead><tr><th>Nama</th><th>Email</th><th>Nama PIC (Daftar Pekerjaan)</th><th>Role</th><th></th></tr></thead>
             <tbody id="usersTableBody"></tbody>
           </table>
         </div>
@@ -1408,6 +1413,7 @@ const ROLE_LABELS = {
 let currentUser = null;
 let currentRole = null; // "planner" | "manager"
 let currentName = "";
+let currentPicName = ""; // nama yang dipakai di kolom PIC pekerjaan — BISA BEDA dari nama login
 let allItems = [];
 let unsubItems = null;
 let currentPage = 1;
@@ -1627,9 +1633,10 @@ window.doRegister = async function(){
   try{
     suppressAuthCheck = true;
     const requestedRole = document.getElementById("regRole").value;
+    const requestedPicName = document.getElementById("regPicNameHint").value.trim();
     const cred = await createUserWithEmailAndPassword(auth, email, pass);
     await setDoc(doc(db, "users", cred.user.uid), {
-      nama, email, role: "pending", requestedRole, createdAt: serverTimestamp()
+      nama, email, role: "pending", requestedRole, requestedPicName, createdAt: serverTimestamp()
     });
     await signOut(auth);
     window.toggleRegister(false);
@@ -1809,6 +1816,7 @@ onAuthStateChanged(auth, async (user) => {
     const uData = uSnap.data();
     currentRole = uData.role || "planner";
     currentName = uData.nama || user.email;
+    currentPicName = uData.picName || uData.nama || user.email;
 
     if(!["planner","manager","admin","senior_planner","viewer"].includes(currentRole)){
       const msg = currentRole === "pending"
@@ -1882,7 +1890,7 @@ function listenItems(){
     // sudah sengaja pindah ke "Semua".
     if(!hasAppliedDefaultMyTasks && ["planner", "senior_planner"].includes(currentRole)){
       hasAppliedDefaultMyTasks = true;
-      document.getElementById("filterPlanner").value = currentName;
+      document.getElementById("filterPlanner").value = currentPicName;
       document.getElementById("myTasksBtnMine").classList.add("active");
       document.getElementById("myTasksBtnAll").classList.remove("active");
     }
@@ -2490,6 +2498,13 @@ async function loadUsersPanel(){
          <option value="viewer">Viewer</option>`;
 
     pendingSection.style.display = pending.length > 0 ? "block" : "none";
+
+    // Daftar nama PIC yang SUDAH PERNAH tercatat di pekerjaan — sumber
+    // acuan untuk mencocokkan akun baru ke identitas yang sudah ada,
+    // bukan menebak berdasarkan kemiripan nama.
+    const existingPicNames = [...new Set(allItems.map(i => i.pic).filter(Boolean))].sort();
+    const picDatalistHtml = existingPicNames.map(p => `<option value="${escapeHtml(p)}"></option>`).join("");
+
     pendingBody.innerHTML = pending.map(u => {
       const requested = u.requestedRole || "planner";
       return `
@@ -2498,6 +2513,12 @@ async function loadUsersPanel(){
         <td>
           ${escapeHtml(u.email || "—")}
           ${u.requestedRole ? `<div class="hint">Ingin daftar sebagai: ${escapeHtml(ROLE_LABELS[u.requestedRole] || u.requestedRole)}</div>` : ""}
+        </td>
+        <td>
+          <input type="text" id="approvePicName_${u.id}" value="${escapeHtml(u.requestedPicName || u.nama || "")}"
+                 list="picNameOptions_${u.id}" style="width:150px;padding:5px 7px;border:1px solid var(--line);border-radius:5px;font-size:12.5px;">
+          <datalist id="picNameOptions_${u.id}">${picDatalistHtml}</datalist>
+          <div class="hint">Cocokkan ke nama yang sudah ada di data, atau biarkan kalau memang orang baru.</div>
         </td>
         <td>
           <select id="approveRole_${u.id}">
@@ -2526,6 +2547,13 @@ async function loadUsersPanel(){
         <td>${escapeHtml(u.nama || "—")}</td>
         <td>${escapeHtml(u.email || "—")}</td>
         <td>
+          <input type="text" value="${escapeHtml(u.picName || "")}" placeholder="(pakai nama login)"
+                 list="picNameOptionsActive_${u.id}"
+                 onchange='window.changeUserPicName(${JSON.stringify(u.id)}, this.value)'
+                 style="width:150px;padding:5px 7px;border:1px solid var(--line);border-radius:5px;font-size:12.5px;">
+          <datalist id="picNameOptionsActive_${u.id}">${picDatalistHtml}</datalist>
+        </td>
+        <td>
           <select onchange='window.changeUserRole(${JSON.stringify(u.id)}, this.value)' ${u.id === currentUser.uid ? "disabled" : ""}>
             <option value="planner" ${u.role==="planner"?"selected":""}>Planner</option>
             <option value="senior_planner" ${u.role==="senior_planner"?"selected":""}>Senior Planner</option>
@@ -2550,8 +2578,9 @@ async function loadUsersPanel(){
 
 window.approveUser = async function(uid){
   const role = document.getElementById(`approveRole_${uid}`).value;
+  const picName = document.getElementById(`approvePicName_${uid}`).value.trim();
   try{
-    await updateDoc(doc(db, "users", uid), { role, approvedBy: currentName, approvedAt: serverTimestamp() });
+    await updateDoc(doc(db, "users", uid), { role, picName, approvedBy: currentName, approvedAt: serverTimestamp() });
     loadUsersPanel();
   }catch(e){
     alert("Gagal menyetujui user.\n\nDetail: " + (e.code || e.message || "tidak diketahui"));
@@ -2594,6 +2623,16 @@ window.deleteUserProfile = async function(uid){
   }catch(e){
     alert("Gagal menghapus user.");
     console.error(e);
+  }
+};
+
+window.changeUserPicName = async function(uid, newPicName){
+  try{
+    await updateDoc(doc(db, "users", uid), { picName: newPicName.trim(), updatedAt: serverTimestamp() });
+  }catch(e){
+    alert("Gagal mengubah Nama PIC. Periksa hak akses.\n\nDetail: " + (e.code || e.message || "tidak diketahui"));
+    console.error(e);
+    loadUsersPanel();
   }
 };
 
@@ -3252,7 +3291,7 @@ window.exportPdfReport = function(){
 };
 
 function renderMyPerformance(items){
-  const myItems = items.filter(i => i.pic === currentName);
+  const myItems = items.filter(i => i.pic === currentPicName);
   const total = myItems.length;
   const done = myItems.filter(i => getTotalProgress(i) >= 100).length;
   const overdue = myItems.filter(isProgressOverdue);
@@ -3321,7 +3360,7 @@ function fmtDate(dateStr){
 }
 
 window.setMyTasksFilter = function(mine){
-  document.getElementById("filterPlanner").value = mine ? currentName : "";
+  document.getElementById("filterPlanner").value = mine ? currentPicName : "";
   document.getElementById("myTasksBtnMine").classList.toggle("active", mine);
   document.getElementById("myTasksBtnAll").classList.toggle("active", !mine);
   window.onFilterChange();
@@ -3592,7 +3631,7 @@ window.openAddModal = function(){
   document.getElementById("fContractType").value = "All in";
   document.getElementById("fDisiplin").value = "Static";
   resetLainnyaWraps();
-  document.getElementById("fPic").value = ["planner", "senior_planner"].includes(currentRole) ? currentName : "";
+  document.getElementById("fPic").value = ["planner", "senior_planner"].includes(currentRole) ? currentPicName : "";
   document.getElementById("fTarget").value = "";
   document.getElementById("fEffective").value = "";
   document.getElementById("fProgressNote").value = "";
