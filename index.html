@@ -774,7 +774,7 @@
       </button>
       <button class="sidebarItem" id="tabPORef" onclick="window.switchView('poref')">
         <span class="sidebarIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h6l3 3v17H6V5z"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="12" y2="17"/></svg></span>
-        <span class="sidebarLabel">Referensi PO</span>
+        <span class="sidebarLabel">Summary PO</span>
       </button>
       <button class="sidebarItem" id="tabUsers" style="display:none;" onclick="window.switchView('users')">
         <span class="sidebarIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
@@ -896,7 +896,6 @@
 
     <!-- ===== VIEW: REFERENSI PO (semua role, read-only) ===== -->
     <div id="viewPORef" style="display:none;">
-      <div class="hint" style="margin-bottom:14px;">Rekap pekerjaan yang sudah keluar PO — referensi untuk perencanaan kontrak berikutnya (harga acuan, vendor sebelumnya, dll).</div>
       <div class="toolbar">
         <div class="filters">
           <input type="text" id="poRefSearch" placeholder="Cari nama pekerjaan, vendor, nomor PO.." oninput="window.renderPORefTable()" style="padding:7px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;font-family:inherit;min-width:240px;">
@@ -2391,7 +2390,7 @@ window.exportPORefPdf = function(){
   <div class="hdr">
     <div class="company">PT KILANG PERTAMINA BALIKPAPAN</div>
     <div class="sub">Tim Planner - Technical Support</div>
-    <h1>Referensi PO — Riwayat Pengadaan Kontrak</h1>
+    <h1>Summary PO — Riwayat Pengadaan Kontrak</h1>
   </div>
   <div class="metaRow">Dicetak: ${generatedAt} · Total ${rows.length} PO</div>
   <table>
