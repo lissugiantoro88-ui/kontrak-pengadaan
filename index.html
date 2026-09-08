@@ -967,13 +967,13 @@
     <div id="viewPORef" style="display:none;">
       <div class="toolbar">
         <div class="filters">
-          <input type="text" id="poRefSearch" placeholder="Cari nama pekerjaan, vendor, nomor PO.." oninput="window.renderPORefTable()" style="padding:7px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;font-family:inherit;min-width:240px;">
-          <select id="poRefFilterKategori" onchange="window.renderPORefTable()">
+          <input type="text" id="poRefSearch" placeholder="Cari nama pekerjaan, vendor, nomor PO.." oninput="window.onPORefFilterChange()" style="padding:7px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;font-family:inherit;min-width:240px;">
+          <select id="poRefFilterKategori" onchange="window.onPORefFilterChange()">
             <option value="">Semua Kategori</option>
             <option>Maintenance</option><option>OYSP</option><option>Take Over</option>
             <option>Tools</option><option>Training</option><option>Certification</option><option>Lainnya</option>
           </select>
-          <select id="poRefFilterDisiplin" onchange="window.renderPORefTable()">
+          <select id="poRefFilterDisiplin" onchange="window.onPORefFilterChange()">
             <option value="">Semua Disiplin</option>
             <option>Static</option><option>Rotating</option><option>Instrument</option><option>Electrical</option><option>Lainnya</option>
           </select>
@@ -1000,6 +1000,19 @@
         <div class="emptyState" id="poRefEmptyState" style="display:none;">
           <div class="big">—</div>
           Belum ada pekerjaan yang keluar PO.
+        </div>
+        <div class="paginationBar" id="poRefPaginationBar" style="display:none;">
+          <div class="pageInfo" id="poRefPageInfo"></div>
+          <div class="pageControls">
+            <select id="poRefPageSizeSelect" onchange="window.onPORefPageSizeChange()">
+              <option value="20" selected>20 / halaman</option>
+              <option value="50">50 / halaman</option>
+              <option value="100">100 / halaman</option>
+            </select>
+            <button class="pageBtn" onclick="window.goToPORefPage(1)" id="poRefBtnFirst">« Awal</button>
+            <button class="pageBtn" onclick="window.goToPORefPrevPage()" id="poRefBtnPrev">‹ Sebelumnya</button>
+            <button class="pageBtn" onclick="window.goToPORefNextPage()" id="poRefBtnNext">Berikutnya ›</button>
+          </div>
         </div>
       </div>
     </div>
@@ -1146,7 +1159,7 @@
     <h2>Broadcast Informasi</h2>
     <div class="field">
       <label>Judul (opsional)</label>
-      <input type="text" id="fAnnTitle" placeholder="mis. Pengumuman Jadwal Libur Nasional">
+      <input type="text" id="fAnnTitle">
     </div>
     <div class="field">
       <label>Isi Informasi</label>
@@ -2431,6 +2444,8 @@ window.convertWaitlistToJob = function(id){
 // ---------------------------------------------------------------------
 let poRefSortKey = "tanggalPO";
 let poRefSortDir = "desc";
+let poRefCurrentPage = 1;
+let poRefPageSize = 20;
 
 function getPORefRows(){
   // Filter berdasarkan PROGRESS TOTAL 100% — bukan sekadar checklist
@@ -2465,9 +2480,23 @@ window.setPORefSort = function(key){
   window.renderPORefTable();
 };
 
+window.onPORefFilterChange = function(){
+  poRefCurrentPage = 1;
+  window.renderPORefTable();
+};
+window.goToPORefPage = function(page){ poRefCurrentPage = page; window.renderPORefTable(); };
+window.goToPORefPrevPage = function(){ window.goToPORefPage(poRefCurrentPage - 1); };
+window.goToPORefNextPage = function(){ window.goToPORefPage(poRefCurrentPage + 1); };
+window.onPORefPageSizeChange = function(){
+  poRefPageSize = parseInt(document.getElementById("poRefPageSizeSelect").value, 10);
+  poRefCurrentPage = 1;
+  window.renderPORefTable();
+};
+
 window.renderPORefTable = function(){
   const tbody = document.getElementById("poRefTableBody");
   const emptyState = document.getElementById("poRefEmptyState");
+  const paginationBar = document.getElementById("poRefPaginationBar");
   const kw = (document.getElementById("poRefSearch").value || "").trim().toLowerCase();
   const fKat = document.getElementById("poRefFilterKategori").value;
   const fDis = document.getElementById("poRefFilterDisiplin").value;
@@ -2494,11 +2523,25 @@ window.renderPORefTable = function(){
   if(rows.length === 0){
     tbody.innerHTML = "";
     emptyState.style.display = "block";
+    paginationBar.style.display = "none";
     return;
   }
   emptyState.style.display = "none";
 
-  tbody.innerHTML = rows.map(r => `
+  const totalPages = Math.max(1, Math.ceil(rows.length / poRefPageSize));
+  if(poRefCurrentPage > totalPages) poRefCurrentPage = totalPages;
+  if(poRefCurrentPage < 1) poRefCurrentPage = 1;
+  const startIdx = (poRefCurrentPage - 1) * poRefPageSize;
+  const pageRows = rows.slice(startIdx, startIdx + poRefPageSize);
+
+  paginationBar.style.display = "flex";
+  document.getElementById("poRefPageInfo").textContent =
+    `Menampilkan ${startIdx + 1}–${Math.min(startIdx + poRefPageSize, rows.length)} dari ${rows.length} PO`;
+  document.getElementById("poRefBtnFirst").disabled = poRefCurrentPage <= 1;
+  document.getElementById("poRefBtnPrev").disabled = poRefCurrentPage <= 1;
+  document.getElementById("poRefBtnNext").disabled = poRefCurrentPage >= totalPages;
+
+  tbody.innerHTML = pageRows.map(r => `
     <tr style="cursor:pointer;" onclick='window.switchView("list");window.openEditModal(${JSON.stringify(r.id)})'>
       <td class="mono">${fmtDate(r.tanggalPO)}</td>
       <td class="mono">${escapeHtml(r.nomorPO || "—")}</td>
