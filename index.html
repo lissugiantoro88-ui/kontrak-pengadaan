@@ -2876,7 +2876,12 @@ function renderStatusOverview(){
 function renderCategoryBars(items){
   const cats = {};
   items.forEach(i => {
-    const k = i.kategori || "Lainnya";
+    // Konsisten dengan logic filter di bawah: SEMUA yang bukan salah satu
+    // dari 6 kategori baku (termasuk kosong ATAU teks custom apa pun)
+    // masuk kelompok "Lainnya" yang SAMA — supaya klik grafik ini benar2
+    // cocok dengan hasil filter, bukan pecah jadi bucket-bucket lain yang
+    // tidak bisa diklik.
+    const k = KATEGORI_KNOWN.includes(i.kategori) ? i.kategori : "Lainnya";
     if(!cats[k]) cats[k] = { count: 0, sumProgress: 0 };
     cats[k].count++;
     cats[k].sumProgress += getTotalProgress(i);
@@ -3158,10 +3163,11 @@ window.exportPdfReport = function(){
   const totalCount = items.length;
   const expiringCount = items.filter(isExpiringSoon).length;
 
-  // --- Breakdown kategori ---
+  // --- Breakdown kategori --- (konsisten dengan dashboard: semua yang
+  // bukan 6 kategori baku masuk "Lainnya" yang sama)
   const catMap = {};
   items.forEach(i => {
-    const k = i.kategori || "Lainnya";
+    const k = KATEGORI_KNOWN.includes(i.kategori) ? i.kategori : "Lainnya";
     if(!catMap[k]) catMap[k] = { count:0, sumProgress:0 };
     catMap[k].count++;
     catMap[k].sumProgress += getTotalProgress(i);
@@ -3439,7 +3445,11 @@ function getFilteredItems(){
   const fSearch = (document.getElementById("searchKeyword").value || "").trim().toLowerCase();
 
   let items = [...allItems];
-  if(fKategori) items = items.filter(i => i.kategori === fKategori);
+  if(fKategori === "Lainnya"){
+    items = items.filter(i => !KATEGORI_KNOWN.includes(i.kategori));
+  } else if(fKategori){
+    items = items.filter(i => i.kategori === fKategori);
+  }
   if(fDisiplin) items = items.filter(i => i.disiplin === fDisiplin);
   if(fPlanner) items = items.filter(i => i.pic === fPlanner);
   if(fSignal === "belum") items = items.filter(i => getItemStatus(i).key === "belum");
