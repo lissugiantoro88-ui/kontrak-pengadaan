@@ -68,6 +68,72 @@
     font-family:inherit;font-size:13px;resize:vertical;background:#fff;box-sizing:border-box;
   }
 
+  /* ===== BROADCAST INFO ===== */
+  .announcementCard{
+    background:var(--panel);border:1px solid var(--accent);border-left:4px solid var(--accent);
+    border-radius:var(--radius);padding:14px 18px;margin-bottom:16px;
+  }
+  .announcementHeader{
+    display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;
+  }
+  .announcementHeader .annTitleGroup{display:flex;align-items:center;gap:8px;font-weight:600;color:var(--accent);font-size:13.5px;}
+  .announcementItem{
+    background:#FAFBFC;border-radius:6px;padding:10px 12px;margin-bottom:8px;
+    border:1px solid var(--accent-soft);
+  }
+  .announcementItem:last-child{margin-bottom:0;}
+  .announcementItem .annMeta{
+    display:flex;justify-content:space-between;align-items:center;
+    font-size:11px;color:var(--ink-soft);margin-bottom:6px;
+  }
+  .announcementItem .annTitle{font-weight:600;font-size:13px;color:var(--ink);margin-bottom:4px;}
+  .announcementItem .annBody{font-size:13px;color:var(--ink);line-height:1.5;}
+  .announcementItem .annBody p{margin:0 0 6px;}
+  .announcementItem .annBody ul, .announcementItem .annBody ol{margin:4px 0 4px 20px;}
+  .announcementItem .annDelete{
+    background:none;border:none;color:var(--ink-soft);cursor:pointer;font-size:11px;
+    text-decoration:underline;padding:0;
+  }
+  .announcementItem .annDelete:hover{color:var(--red);}
+
+  /* ===== PRIORITAS ===== */
+  .priorityBox{
+    border:1px solid #E8C468;background:#FFFAEE;
+    border-radius:8px;padding:12px 14px;margin-bottom:16px;
+  }
+  .priorityCheck{display:flex;align-items:center;gap:9px;cursor:pointer;font-size:13px;font-weight:500;color:#9A7717;}
+  .priorityCheck input[type=checkbox]{width:16px;height:16px;accent-color:#C79A2E;cursor:pointer;}
+  .priorityBox textarea{
+    width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;
+    font-family:inherit;font-size:13px;resize:vertical;background:#fff;box-sizing:border-box;
+  }
+  .priorityFlagBadge{
+    display:inline-block;font-size:10px;font-family:'IBM Plex Mono',monospace;font-weight:600;
+    color:#fff;background:#C79A2E;padding:1px 7px;border-radius:8px;margin-left:8px;
+    vertical-align:middle;text-transform:uppercase;letter-spacing:.02em;
+  }
+  .priorityAlertBanner{
+    background:#FFFAEE;border:1px solid #E8C468;border-radius:var(--radius);
+    padding:14px 18px;margin-bottom:16px;
+  }
+  .priorityAlertBanner .priorityAlertHeader{
+    display:flex;align-items:center;gap:8px;font-weight:600;color:#9A7717;
+    font-size:13.5px;margin-bottom:10px;
+  }
+  .priorityAlertBanner .priorityAlertHeader .badgeCount{
+    background:#C79A2E;color:#fff;font-family:'IBM Plex Mono',monospace;
+    font-size:11px;padding:1px 8px;border-radius:10px;
+  }
+  .priorityAlertItem{
+    background:#fff;border-radius:6px;padding:9px 12px;margin-bottom:6px;cursor:pointer;
+    border:1px solid #E8C468;
+  }
+  .priorityAlertItem:last-child{margin-bottom:0;}
+  .priorityAlertItem:hover{background:#FFFDF5;}
+  .priorityAlertItem .priorityAlertName{font-weight:500;font-size:13px;color:var(--ink);}
+  .priorityAlertItem .priorityAlertMeta{font-size:11.5px;color:var(--ink-soft);margin-top:2px;}
+  .priorityAlertItem .priorityAlertNote{font-size:12px;color:var(--ink-soft);margin-top:4px;font-style:italic;}
+
   .mgmtAlertBanner{
     background:var(--red-soft);border:1px solid var(--red);border-radius:var(--radius);
     padding:14px 18px;margin-bottom:16px;
@@ -790,6 +856,8 @@
     <!-- ===== VIEW: DAFTAR PEKERJAAN (+ ringkasan kinerja) ===== -->
     <div id="viewList">
 
+    <div id="announcementContainer"></div>
+    <div id="priorityAlertContainer"></div>
     <div id="managementAlertContainer"></div>
     <div class="statusOverviewCard" id="statusOverviewCard"></div>
 
@@ -835,6 +903,7 @@
         <button class="btn btn-ghost" onclick="window.resetFilters()">Reset</button>
       </div>
       <div style="display:flex;gap:8px;">
+        <button class="btn btn-ghost" id="btnBroadcast" style="display:none;" onclick="window.openAnnouncementModal()">📢 Broadcast Info</button>
         <button class="btn btn-ghost" id="btnExportPdf" onclick="window.exportPdfReport()">Export PDF</button>
         <button class="btn btn-ghost" id="btnImportFormat" onclick="window.openImportFormatModal()" title="Lihat contoh format Excel">Format Import ⓘ</button>
         <button class="btn btn-ghost" id="btnImport" onclick="document.getElementById('excelFileInput').click()">Import dari Excel</button>
@@ -1066,6 +1135,35 @@
     <div class="modalFooter">
       <button class="btn btn-ghost" onclick="window.closeDisposisiModal()">Batal</button>
       <button class="btn btn-primary" onclick="window.saveDisposisi()">Disposisikan</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== MODAL: BROADCAST INFO ===================== -->
+<div class="modalOverlay" id="announcementModal">
+  <div class="modalBox" style="position:relative;">
+    <button class="modalCloseX" onclick="window.closeAnnouncementModal()" title="Tutup" aria-label="Tutup">&times;</button>
+    <h2>Broadcast Informasi</h2>
+    <div class="field">
+      <label>Judul (opsional)</label>
+      <input type="text" id="fAnnTitle" placeholder="mis. Pengumuman Jadwal Libur Nasional">
+    </div>
+    <div class="field">
+      <label>Isi Informasi</label>
+      <div class="richToolbar">
+        <button type="button" onclick="window.richExecAnn('bold')" title="Tebal"><b>B</b></button>
+        <button type="button" onclick="window.richExecAnn('italic')" title="Miring"><i>I</i></button>
+        <button type="button" onclick="window.richExecAnn('underline')" title="Garis bawah"><u>U</u></button>
+        <button type="button" onclick="window.richExecAnn('insertUnorderedList')" title="Daftar bullet">• List</button>
+        <button type="button" onclick="window.richExecAnn('insertOrderedList')" title="Daftar bernomor">1. List</button>
+        <button type="button" onclick="window.richExecAnn('removeFormat')" title="Hapus format">Clear</button>
+      </div>
+      <div id="fAnnContent" class="richEditor" contenteditable="true"></div>
+    </div>
+    <div class="errMsg" id="announcementModalErr"></div>
+    <div class="modalFooter">
+      <button class="btn btn-ghost" onclick="window.closeAnnouncementModal()">Batal</button>
+      <button class="btn btn-primary" onclick="window.saveAnnouncement()">Kirim Broadcast</button>
     </div>
   </div>
 </div>
@@ -1307,6 +1405,17 @@
       </div>
     </div>
 
+    <div class="priorityBox" id="priorityBox" style="display:none;">
+      <label class="priorityCheck">
+        <input type="checkbox" id="fPriority" onchange="window.onPriorityChange()">
+        <span>⭐ Tandai sebagai Prioritas</span>
+      </label>
+      <div class="field" id="priorityNoteWrap" style="display:none;margin-top:8px;">
+        <label>Catatan Prioritas (opsional)</label>
+        <textarea id="fPriorityNote" rows="2" placeholder="mis. Harus selesai sebelum Turn Around bulan depan"></textarea>
+      </div>
+    </div>
+
     <div class="escalationBox">
       <label class="escalationCheck">
         <input type="checkbox" id="fNeedsManagement" onchange="window.onNeedsManagementChange()">
@@ -1517,6 +1626,11 @@ window.onDisiplinChange = function(){
   const v = document.getElementById("fDisiplin").value;
   document.getElementById("disiplinLainnyaWrap").style.display = v === "Lainnya" ? "block" : "none";
 };
+window.onPriorityChange = function(){
+  const checked = document.getElementById("fPriority").checked;
+  document.getElementById("priorityNoteWrap").style.display = checked ? "block" : "none";
+};
+
 window.onNeedsManagementChange = function(){
   const checked = document.getElementById("fNeedsManagement").checked;
   document.getElementById("managementNoteWrap").style.display = checked ? "block" : "none";
@@ -1927,6 +2041,7 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById("btnImport").style.display = canWrite ? "inline-flex" : "none";
     document.getElementById("btnImportFormat").style.display = canWrite ? "inline-flex" : "none";
     document.getElementById("btnExportPdf").style.display = ["manager", "admin", "senior_planner"].includes(currentRole) ? "inline-flex" : "none";
+    document.getElementById("btnBroadcast").style.display = ["manager", "admin", "senior_planner"].includes(currentRole) ? "inline-flex" : "none";
     document.getElementById("tabUsers").style.display = ["admin", "senior_planner"].includes(currentRole) ? "inline-block" : "none";
     document.getElementById("tabLog").style.display = currentRole === "admin" ? "inline-block" : "none";
     document.getElementById("btnAddWaitlist").style.display = ["manager", "senior_planner", "admin"].includes(currentRole) ? "inline-flex" : "none";
@@ -1938,6 +2053,7 @@ onAuthStateChanged(auth, async (user) => {
     allItems = []; // buang data sisa sesi sebelumnya sebelum render ulang
     window.switchView("list");
     listenItems();
+    loadAnnouncements();
   } else {
     currentUser = null;
     currentRole = null;
@@ -2548,6 +2664,9 @@ function buildChangeSummary(oldItem, newPayload){
     const labelOf = v => v === "hold" ? "Hold" : v === "cancel" ? "Cancel" : "Normal";
     parts.push(`Status Kontrak: ${labelOf(oldItem.statusKontrak)} → ${labelOf(newPayload.statusKontrak)}`);
   }
+  if(newPayload.isPriority !== undefined && newPayload.isPriority !== null && !!newPayload.isPriority !== !!oldItem.isPriority){
+    parts.push(newPayload.isPriority ? "⭐ Ditandai Prioritas" : "Tanda Prioritas dicabut");
+  }
   return parts.length ? parts.join(" · ") : "Tidak ada perubahan terdeteksi";
 }
 
@@ -3025,6 +3144,43 @@ window.goFilterSignal = function(sig){
 // memfilter tabel ke kategori/planner lain. Hanya tampil kalau ADA yang
 // perlu diperhatikan (tidak ada state kosong yang mengganggu).
 // ---------------------------------------------------------------------
+// ---------------------------------------------------------------------
+// BANNER NOTIFIKASI: "Prioritas" — sama pola dengan banner manajemen,
+// SELALU pakai SEMUA data (tidak ikut filter aktif). Item yang sudah
+// Selesai/Hold/Cancel dikecualikan — menandai prioritas pada sesuatu yang
+// sudah tidak aktif dikerjakan tidak actionable, jadi tidak perlu tampil.
+// ---------------------------------------------------------------------
+function renderPriorityAlertBanner(){
+  const flagged = allItems.filter(i => i.isPriority && getTotalProgress(i) < 100 && !i.statusKontrak);
+  if(flagged.length === 0) return "";
+
+  flagged.sort((a, b) => tsMillis(b.priorityMarkedAt) - tsMillis(a.priorityMarkedAt));
+
+  const itemsHtml = flagged.map(i => {
+    const ms = tsMillis(i.priorityMarkedAt);
+    const days = ms ? Math.floor((Date.now() - ms) / 86400000) : null;
+    return `
+      <div class="priorityAlertItem" onclick='window.switchView("list");window.openEditModal(${JSON.stringify(i.id)})'>
+        <div class="priorityAlertName">${escapeHtml(i.namaPekerjaan)}</div>
+        <div class="priorityAlertMeta">
+          Planner: ${escapeHtml(i.pic || "—")} · Ditandai oleh: ${escapeHtml(i.priorityMarkedBy || "—")}${days !== null ? ` · ${days} hari lalu` : ""}
+        </div>
+        ${i.priorityNote ? `<div class="priorityAlertNote">"${escapeHtml(i.priorityNote)}"</div>` : ""}
+      </div>
+    `;
+  }).join("");
+
+  return `
+    <div class="priorityAlertBanner">
+      <div class="priorityAlertHeader">
+        ⭐ Pekerjaan Prioritas
+        <span class="badgeCount">${flagged.length}</span>
+      </div>
+      ${itemsHtml}
+    </div>
+  `;
+}
+
 function renderManagementAlertBanner(){
   const flagged = allItems.filter(i => i.needsManagementSupport);
   if(flagged.length === 0) return "";
@@ -3057,6 +3213,7 @@ function renderManagementAlertBanner(){
 }
 
 function renderStatusOverview(){
+  document.getElementById("priorityAlertContainer").innerHTML = renderPriorityAlertBanner();
   document.getElementById("managementAlertContainer").innerHTML = renderManagementAlertBanner();
 
   const el = document.getElementById("statusOverviewCard");
@@ -3596,9 +3753,19 @@ function renderMyPerformance(items){
   const done = myItems.filter(i => getTotalProgress(i) >= 100).length;
   const overdue = myItems.filter(isProgressOverdue);
   const stuck = myItems.filter(isStuck);
+  const myPriority = myItems.filter(i => i.isPriority && getTotalProgress(i) < 100 && !i.statusKontrak);
   const activeItems = myItems.filter(i => getTotalProgress(i) < 100);
   const remainingSum = activeItems.reduce((s,i) => s + (100 - getTotalProgress(i)), 0);
   const avgProgress = total > 0 ? Math.round(myItems.reduce((s,i) => s + getTotalProgress(i), 0) / total) : 0;
+
+  const priorityListHtml = myPriority.length === 0
+    ? `<div class="hint">Tidak ada tugas prioritas saat ini.</div>`
+    : `<div class="myOverdueList">${myPriority.map(i => `
+        <div class="moItem" style="cursor:pointer;" onclick='window.switchView("list");window.openEditModal(${JSON.stringify(i.id)})'>
+          <span>⭐ ${escapeHtml(i.namaPekerjaan)}</span>
+          <span class="moDate">oleh ${escapeHtml(i.priorityMarkedBy || "—")}</span>
+        </div>
+      `).join("")}</div>`;
 
   const overdueListHtml = overdue.length === 0
     ? `<div class="hint">Tidak ada pekerjaan yang terlambat dari target. Baik.</div>`
@@ -3623,10 +3790,15 @@ function renderMyPerformance(items){
       <h3>Kinerja Saya</h3>
       <div class="planCard">
         <div class="planCardGrid">
+          <div><div class="num mono" style="font-size:22px;color:${myPriority.length>0?'#C79A2E':'inherit'}">${myPriority.length}</div><div class="lbl">⭐ Prioritas</div></div>
           <div><div class="num mono" style="font-size:22px;">${total}</div><div class="lbl">Total Tugas Saya</div></div>
           <div><div class="num mono" style="font-size:22px;">${done}</div><div class="lbl">Selesai</div></div>
           <div><div class="num mono" style="font-size:22px;">${remainingSum}</div><div class="lbl">Sisa Beban (poin)</div></div>
           <div><div class="num mono" style="font-size:22px;color:${overdue.length>0?'var(--red)':'inherit'}">${overdue.length}</div><div class="lbl">Terlambat</div></div>
+        </div>
+        <div style="margin-top:14px;">
+          <div class="stageGroupTitle" style="margin-bottom:8px;">⭐ Pekerjaan Prioritas Saya</div>
+          ${priorityListHtml}
         </div>
         <div style="margin-top:14px;">
           <div class="stageGroupTitle" style="margin-bottom:8px;">Pekerjaan Saya yang Terlambat</div>
@@ -3855,7 +4027,7 @@ window.renderTable = function(){
     return `
       <tr class="${overdue ? 'rowOverdue' : ''}">
         <td>
-          <div class="jobname">${escapeHtml(item.namaPekerjaan)}${relativeUpdateBadge(item)}${isStuck(item) ? `<span class="stuckBadge">${getAgeDays(item)} Hari Tanpa Progress</span>` : ""}${item.needsManagementSupport ? `<span class="mgmtFlagBadge">🚩 Need Support Management</span>` : ""}</div>
+          <div class="jobname">${item.isPriority ? `<span class="priorityFlagBadge">⭐ Prioritas</span> ` : ""}${escapeHtml(item.namaPekerjaan)}${relativeUpdateBadge(item)}${isStuck(item) ? `<span class="stuckBadge">${getAgeDays(item)} Hari Tanpa Progress</span>` : ""}${item.needsManagementSupport ? `<span class="mgmtFlagBadge">🚩 Need Support Management</span>` : ""}</div>
           ${item.progressNote ? `<div class="progNote">${escapeHtml(item.progressNote)}</div>` : ""}
         </td>
         <td>
@@ -3907,6 +4079,101 @@ function resetLainnyaWraps(){
   document.getElementById("fDisiplinLainnya").value = "";
 }
 
+window.richExecAnn = function(cmd){
+  document.execCommand(cmd, false, null);
+  document.getElementById("fAnnContent").focus();
+};
+
+const ANNOUNCEMENT_LIMIT = 5; // tampilkan 5 broadcast terbaru — cukup informatif, tidak bikin penuh layar
+let allAnnouncements = [];
+
+async function loadAnnouncements(){
+  try{
+    const q = query(collection(db, "announcements"), orderBy("createdAt", "desc"), limit(ANNOUNCEMENT_LIMIT));
+    const snap = await getDocs(q);
+    allAnnouncements = [];
+    snap.forEach(d => allAnnouncements.push({ id: d.id, ...d.data() }));
+    renderAnnouncements();
+  }catch(e){
+    console.error("Gagal memuat broadcast:", e);
+  }
+}
+
+function renderAnnouncements(){
+  const el = document.getElementById("announcementContainer");
+  if(allAnnouncements.length === 0){ el.innerHTML = ""; return; }
+
+  const itemsHtml = allAnnouncements.map(a => {
+    const waktu = a.createdAt && a.createdAt.seconds
+      ? new Date(a.createdAt.seconds * 1000).toLocaleString('id-ID', {dateStyle:'medium', timeStyle:'short'})
+      : "";
+    const canDelete = currentUser && (a.createdByUid === currentUser.uid || currentRole === "admin");
+    return `
+      <div class="announcementItem">
+        <div class="annMeta">
+          <span>${escapeHtml(a.createdBy || "—")} (${escapeHtml(ROLE_LABELS[a.createdByRole] || a.createdByRole || "")}) · ${waktu}</span>
+          ${canDelete ? `<button class="annDelete" onclick='window.deleteAnnouncement(${JSON.stringify(a.id)})'>Hapus</button>` : ""}
+        </div>
+        ${a.title ? `<div class="annTitle">${escapeHtml(a.title)}</div>` : ""}
+        <div class="annBody">${a.content || ""}</div>
+      </div>
+    `;
+  }).join("");
+
+  el.innerHTML = `
+    <div class="announcementCard">
+      <div class="announcementHeader">
+        <div class="annTitleGroup">📢 Broadcast Informasi</div>
+      </div>
+      ${itemsHtml}
+    </div>
+  `;
+}
+
+window.openAnnouncementModal = function(){
+  document.getElementById("fAnnTitle").value = "";
+  document.getElementById("fAnnContent").innerHTML = "";
+  document.getElementById("announcementModalErr").textContent = "";
+  document.getElementById("announcementModal").classList.add("show");
+};
+window.closeAnnouncementModal = function(){
+  document.getElementById("announcementModal").classList.remove("show");
+};
+
+window.saveAnnouncement = async function(){
+  const title = document.getElementById("fAnnTitle").value.trim();
+  const content = sanitizeRichHtml(document.getElementById("fAnnContent").innerHTML.trim());
+  const errEl = document.getElementById("announcementModalErr");
+  errEl.textContent = "";
+  if(!content || content === "<br>"){
+    errEl.textContent = "Isi informasi tidak boleh kosong.";
+    return;
+  }
+  try{
+    await addDoc(collection(db, "announcements"), {
+      title, content,
+      createdBy: currentName, createdByUid: currentUser.uid, createdByRole: currentRole,
+      createdAt: serverTimestamp()
+    });
+    window.closeAnnouncementModal();
+    loadAnnouncements();
+  }catch(e){
+    errEl.textContent = "Gagal mengirim broadcast. Periksa hak akses.";
+    console.error(e);
+  }
+};
+
+window.deleteAnnouncement = async function(id){
+  if(!confirm("Hapus broadcast ini?")) return;
+  try{
+    await deleteDoc(doc(db, "announcements", id));
+    loadAnnouncements();
+  }catch(e){
+    alert("Gagal menghapus. Mungkin ini bukan broadcast yang Anda buat.");
+    console.error(e);
+  }
+};
+
 window.richExec = function(cmd){
   document.execCommand(cmd, false, null);
   document.getElementById("fDasarPengadaan").focus();
@@ -3949,6 +4216,10 @@ window.openAddModal = function(){
   document.getElementById("fManagementNote").value = "";
   document.getElementById("managementNoteWrap").style.display = "none";
   document.getElementById("managementFlaggedHint").textContent = "";
+  document.getElementById("priorityBox").style.display = ["admin", "manager", "senior_planner"].includes(currentRole) ? "block" : "none";
+  document.getElementById("fPriority").checked = false;
+  document.getElementById("fPriorityNote").value = "";
+  document.getElementById("priorityNoteWrap").style.display = "none";
   document.getElementById("modalErr").textContent = "";
   document.getElementById("targetEditHint").textContent = "";
   document.getElementById("btnDelete").style.display = "none";
@@ -4022,6 +4293,10 @@ window.openEditModal = function(id){
   } else {
     flagHint.textContent = "";
   }
+  document.getElementById("priorityBox").style.display = ["admin", "manager", "senior_planner"].includes(currentRole) ? "block" : "none";
+  document.getElementById("fPriority").checked = !!item.isPriority;
+  document.getElementById("fPriorityNote").value = item.priorityNote || "";
+  document.getElementById("priorityNoteWrap").style.display = item.isPriority ? "block" : "none";
   document.getElementById("modalErr").textContent = "";
   renderStageChecklist(item.stages, item.stageDetails);
 
@@ -4051,6 +4326,8 @@ function setFieldPermissions(isEdit){
   document.getElementById("fDasarPengadaan").contentEditable = readOnlyAll ? "false" : "true";
   // Target tanggal: planner/admin/senior_planner/manager boleh isi — viewer TIDAK sama sekali.
   document.getElementById("fTarget").disabled = isViewer;
+  document.getElementById("fPriority").disabled = isViewer;
+  document.getElementById("fPriorityNote").disabled = isViewer;
 }
 
 window.closeModal = function(){
@@ -4066,16 +4343,35 @@ window.saveItem = async function(){
 
   try{
     if(currentRole === "manager" && id){
-      // Manager hanya boleh update targetSelesai
+      // Manager: boleh update targetSelesai DAN/ATAU prioritas (dua-duanya
+      // opsional, sesuai apa yang diubah — field lain tetap tidak tersentuh).
       const existingForLog = allItems.find(i => i.id === id);
-      await updateDoc(doc(db, "procurement_items", id), {
+      const isPriorityNow = document.getElementById("fPriority").checked;
+      const wasPriorityBefore = existingForLog ? !!existingForLog.isPriority : false;
+
+      const managerPayload = {
         targetSelesai: targetVal,
         targetLastEditedBy: currentName,
         targetLastEditedAt: serverTimestamp(),
+        isPriority: isPriorityNow,
+        priorityNote: isPriorityNow ? document.getElementById("fPriorityNote").value.trim() : "",
         updatedAt: serverTimestamp()
-      });
-      logActivity(id, existingForLog ? existingForLog.namaPekerjaan : "?", "Update Target",
-        `Target Selesai: "${(existingForLog && existingForLog.targetSelesai) || "—"}" → "${targetVal || "—"}"`);
+      };
+      if(isPriorityNow && !wasPriorityBefore){
+        managerPayload.priorityMarkedBy = currentName;
+        managerPayload.priorityMarkedAt = serverTimestamp();
+      } else if(!isPriorityNow && wasPriorityBefore){
+        managerPayload.priorityMarkedBy = null;
+        managerPayload.priorityMarkedAt = null;
+      }
+
+      await updateDoc(doc(db, "procurement_items", id), managerPayload);
+
+      const summaryParts = [`Target Selesai: "${(existingForLog && existingForLog.targetSelesai) || "—"}" → "${targetVal || "—"}"`];
+      if(isPriorityNow !== wasPriorityBefore){
+        summaryParts.push(isPriorityNow ? "⭐ Ditandai Prioritas" : "Tanda Prioritas dicabut");
+      }
+      logActivity(id, existingForLog ? existingForLog.namaPekerjaan : "?", "Update Target/Prioritas", summaryParts.join(" · "));
       window.closeModal();
       return;
     }
@@ -4105,6 +4401,15 @@ window.saveItem = async function(){
     if(document.getElementById("fStatusHold").checked) statusKontrak = "hold";
     else if(document.getElementById("fStatusCancel").checked) statusKontrak = "cancel";
 
+    // Priority: HANYA admin & senior_planner yang boleh set di jalur ini
+    // (planner tidak boleh menandai prioritas untuk dirinya sendiri —
+    // manager sudah punya jalur sendiri di atas). Kalau bukan role itu,
+    // field ini SENGAJA tidak dimasukkan ke payload sama sekali supaya
+    // updateDoc tidak menimpa nilai yang sudah ada.
+    const canSetPriority = ["admin", "senior_planner"].includes(currentRole);
+    const isPriorityNow = canSetPriority ? document.getElementById("fPriority").checked : null;
+    const wasPriorityBefore = existingItem ? !!existingItem.isPriority : false;
+
     const payload = {
       namaPekerjaan: nama,
       kategori: kategori,
@@ -4132,6 +4437,17 @@ window.saveItem = async function(){
       payload.managementSupportFlaggedAt = serverTimestamp();
     } else if(!needsManagement && wasNeedsManagement){
       payload.managementSupportFlaggedAt = null;
+    }
+    if(canSetPriority){
+      payload.isPriority = isPriorityNow;
+      payload.priorityNote = isPriorityNow ? document.getElementById("fPriorityNote").value.trim() : "";
+      if(isPriorityNow && !wasPriorityBefore){
+        payload.priorityMarkedBy = currentName;
+        payload.priorityMarkedAt = serverTimestamp();
+      } else if(!isPriorityNow && wasPriorityBefore){
+        payload.priorityMarkedBy = null;
+        payload.priorityMarkedAt = null;
+      }
     }
     // progressUpdatedAt HANYA disentuh kalau checklist sub-tahap benar-benar
     // berubah — dipakai untuk analisis "usia macet" (WLA). Kalau tidak
