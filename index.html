@@ -395,6 +395,7 @@
   .pill-takeover{background:#EFE9F7;color:#6B4FA0;}
   .pill-tools{background:#EDF1E4;color:#5C7A32;}
   .pill-training{background:#FCE9F1;color:#A5406B;}
+  .pill-certification{background:#E0F5F3;color:#0F7A6E;}
   .pill-lainnya{background:#EFEFEC;color:var(--ink-soft);}
 
   .badge-closed{
@@ -478,6 +479,13 @@
     max-height:90vh;overflow-y:auto;padding:24px;
   }
   .modalBox h2{font-size:16px;margin-bottom:18px;}
+  .modalCloseX{
+    position:absolute;top:14px;right:14px;
+    width:28px;height:28px;border-radius:6px;border:none;background:none;
+    color:var(--ink-soft);font-size:22px;line-height:1;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .modalCloseX:hover{background:#F0F0EE;color:var(--ink);}
   .modalRow2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
   .modalFooter{display:flex;justify-content:flex-end;gap:8px;margin-top:18px;}
 
@@ -795,6 +803,7 @@
           <option>Take Over</option>
           <option>Tools</option>
           <option>Training</option>
+          <option>Certification</option>
           <option>Lainnya</option>
         </select>
         <select id="filterDisiplin" onchange="window.onFilterChange()">
@@ -1123,7 +1132,8 @@
 
 <!-- ===================== MODAL: TAMBAH / EDIT ===================== -->
 <div class="modalOverlay" id="itemModal">
-  <div class="modalBox">
+  <div class="modalBox" style="position:relative;">
+    <button class="modalCloseX" onclick="window.closeModal()" title="Tutup" aria-label="Tutup">&times;</button>
     <h2 id="modalTitle">Tambah Pekerjaan</h2>
     <input type="hidden" id="itemId">
 
@@ -1155,6 +1165,7 @@
           <option>Take Over</option>
           <option>Tools</option>
           <option>Training</option>
+          <option>Certification</option>
           <option>Lainnya</option>
         </select>
       </div>
@@ -1380,7 +1391,8 @@ const STAGE_DETAIL_FIELDS = {
   ],
   kontrakPO: [
     { key:"nomorPO", label:"Nomor PO", type:"text" },
-    { key:"tanggalPO", label:"Tanggal PO", type:"date" }
+    { key:"tanggalPO", label:"Tanggal PO", type:"date" },
+    { key:"nilaiPO", label:"Nilai PO", type:"text" }
   ]
 };
 
@@ -1391,7 +1403,8 @@ const KATEGORI_PILL_CLASS = {
   "OYSP": "pill-oysp",
   "Take Over": "pill-takeover",
   "Tools": "pill-tools",
-  "Training": "pill-training"
+  "Training": "pill-training",
+  "Certification": "pill-certification"
 };
 
 const ROLE_LABELS = {
@@ -3892,7 +3905,7 @@ window.deleteItem = async function(){
 // IMPORT DARI EXCEL — mengikuti struktur sheet "New_Dashboard_Monitoring
 // Planner": data mulai baris ke-6, kolom B..U (12 kolom H..S = sub-tahap).
 // ---------------------------------------------------------------------
-const KATEGORI_KNOWN = ["Maintenance","OYSP","Take Over","Tools","Training"];
+const KATEGORI_KNOWN = ["Maintenance","OYSP","Take Over","Tools","Training","Certification"];
 const DISIPLIN_KNOWN = ["Static","Rotating","Instrument","Electrical"];
 const CONTRACT_TYPE_MAP = {
   "all in": "All in", "material": "Material", "jasa": "Jasa",
