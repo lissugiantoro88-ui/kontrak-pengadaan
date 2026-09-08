@@ -2317,8 +2317,12 @@ let poRefSortKey = "tanggalPO";
 let poRefSortDir = "desc";
 
 function getPORefRows(){
+  // Filter berdasarkan PROGRESS TOTAL 100% — bukan sekadar checklist
+  // "Kontrak/PO" tercentang. Secara teori checkbox itu bisa saja tercentang
+  // sendiri tanpa sub-tahap lain lengkap (kalau planner klik tidak
+  // berurutan), jadi ini lebih akurat memastikan pekerjaan benar2 selesai.
   return allItems
-    .filter(i => i.stages && i.stages.kontrakPO)
+    .filter(i => getTotalProgress(i) >= 100)
     .map(i => {
       const kontrakDetail = (i.stageDetails && i.stageDetails.kontrakPO) || {};
       const pemenangDetail = (i.stageDetails && i.stageDetails.penetapanPemenang) || {};
