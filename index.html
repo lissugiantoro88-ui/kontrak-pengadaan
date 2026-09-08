@@ -723,19 +723,6 @@
       <label for="regPass">Password</label>
       <input type="password" id="regPass" autocomplete="new-password" placeholder="minimal 6 karakter">
     </div>
-    <div class="field">
-      <label for="regRole">Daftar sebagai</label>
-      <select id="regRole">
-        <option value="planner">Planner</option>
-        <option value="viewer">Viewer</option>
-      </select>
-      <div class="hint">Role Manager/Admin/Senior Planner hanya bisa dibuat langsung oleh admin.</div>
-    </div>
-    <div class="field">
-      <label for="regPicNameHint">Nama Anda di Daftar Pekerjaan (kalau berbeda)</label>
-      <input type="text" id="regPicNameHint" placeholder="Isi HANYA kalau nama Anda di kolom Planner beda dari nama di atas">
-      <div class="hint">Kosongkan kalau nama di atas sudah sama persis dengan yang tertulis di kolom Planner pada pekerjaan yang sudah ada.</div>
-    </div>
     <button class="btn btn-primary btn-block" onclick="window.doRegister()">Daftar</button>
     <div class="errMsg" id="registerErr"></div>
     <div class="hint" style="text-align:center;margin-top:6px;">Akun baru perlu disetujui sebelum bisa dipakai.</div>
@@ -1634,11 +1621,9 @@ window.doRegister = async function(){
 
   try{
     suppressAuthCheck = true;
-    const requestedRole = document.getElementById("regRole").value;
-    const requestedPicName = document.getElementById("regPicNameHint").value.trim();
     const cred = await createUserWithEmailAndPassword(auth, email, pass);
     await setDoc(doc(db, "users", cred.user.uid), {
-      nama, email, role: "pending", requestedRole, requestedPicName, createdAt: serverTimestamp()
+      nama, email, role: "pending", createdAt: serverTimestamp()
     });
     await signOut(auth);
     window.toggleRegister(false);
