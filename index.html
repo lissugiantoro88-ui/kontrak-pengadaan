@@ -772,6 +772,10 @@
         <span class="sidebarIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 15.5"/></svg></span>
         <span class="sidebarLabel">Waiting List</span>
       </button>
+      <button class="sidebarItem" id="tabPORef" onclick="window.switchView('poref')">
+        <span class="sidebarIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h6l3 3v17H6V5z"/><line x1="9" y1="9" x2="15" y2="9"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="12" y2="17"/></svg></span>
+        <span class="sidebarLabel">Referensi PO</span>
+      </button>
       <button class="sidebarItem" id="tabUsers" style="display:none;" onclick="window.switchView('users')">
         <span class="sidebarIcon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
         <span class="sidebarLabel">Manajemen User</span>
@@ -887,6 +891,48 @@
           </thead>
           <tbody id="waitlistTableBody"></tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- ===== VIEW: REFERENSI PO (semua role, read-only) ===== -->
+    <div id="viewPORef" style="display:none;">
+      <div class="hint" style="margin-bottom:14px;">Rekap pekerjaan yang sudah keluar PO — referensi untuk perencanaan kontrak berikutnya (harga acuan, vendor sebelumnya, dll).</div>
+      <div class="toolbar">
+        <div class="filters">
+          <input type="text" id="poRefSearch" placeholder="Cari nama pekerjaan, vendor, nomor PO.." oninput="window.renderPORefTable()" style="padding:7px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;font-family:inherit;min-width:240px;">
+          <select id="poRefFilterKategori" onchange="window.renderPORefTable()">
+            <option value="">Semua Kategori</option>
+            <option>Maintenance</option><option>OYSP</option><option>Take Over</option>
+            <option>Tools</option><option>Training</option><option>Certification</option><option>Lainnya</option>
+          </select>
+          <select id="poRefFilterDisiplin" onchange="window.renderPORefTable()">
+            <option value="">Semua Disiplin</option>
+            <option>Static</option><option>Rotating</option><option>Instrument</option><option>Electrical</option><option>Lainnya</option>
+          </select>
+        </div>
+        <button class="btn btn-ghost" onclick="window.exportPORefPdf()">Export PDF</button>
+      </div>
+      <div class="tableWrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="sortable" onclick="window.setPORefSort('tanggalPO')">Tanggal PO</th>
+              <th class="sortable" onclick="window.setPORefSort('nomorPO')">Nomor PO</th>
+              <th class="sortable" onclick="window.setPORefSort('nama')">Nama Pekerjaan</th>
+              <th>Kategori</th>
+              <th>Disiplin</th>
+              <th class="sortable" onclick="window.setPORefSort('vendor')">Vendor Pemenang</th>
+              <th>Jenis Kontrak</th>
+              <th class="sortable" onclick="window.setPORefSort('nilai')">Nilai PO</th>
+              <th>Planner</th>
+            </tr>
+          </thead>
+          <tbody id="poRefTableBody"></tbody>
+        </table>
+        <div class="emptyState" id="poRefEmptyState" style="display:none;">
+          <div class="big">—</div>
+          Belum ada pekerjaan yang keluar PO.
+        </div>
       </div>
     </div>
 
@@ -1385,6 +1431,7 @@ const STAGE_DETAIL_FIELDS = {
     { key:"catatan", label:"Catatan", type:"text" }
   ],
   penetapanPemenang: [
+    { key:"vendorPemenang", label:"Vendor Pemenang", type:"text" },
     { key:"nomor", label:"Nomor Penetapan", type:"text" },
     { key:"tanggal", label:"Tanggal Penetapan", type:"date" },
     { key:"catatan", label:"Catatan", type:"text" }
@@ -1986,14 +2033,17 @@ function populatePlannerFilter(){
 window.switchView = function(view){
   document.getElementById("viewList").style.display = view === "list" ? "block" : "none";
   document.getElementById("viewWaitlist").style.display = view === "waitlist" ? "block" : "none";
+  document.getElementById("viewPORef").style.display = view === "poref" ? "block" : "none";
   document.getElementById("viewUsers").style.display = view === "users" ? "block" : "none";
   document.getElementById("viewLog").style.display = view === "log" ? "block" : "none";
   document.getElementById("tabList").classList.toggle("active", view === "list");
   document.getElementById("tabWaitlist").classList.toggle("active", view === "waitlist");
+  document.getElementById("tabPORef").classList.toggle("active", view === "poref");
   document.getElementById("tabUsers").classList.toggle("active", view === "users");
   document.getElementById("tabLog").classList.toggle("active", view === "log");
   if(view === "list") renderStatusOverview();
   if(view === "waitlist") loadWaitlist();
+  if(view === "poref") window.renderPORefTable();
   if(view === "users"){
     loadUsersPanel();
     startPresenceWatch();
@@ -2213,6 +2263,161 @@ window.convertWaitlistToJob = function(id){
   window.openAddModal();
   document.getElementById("fNama").value = item.namaPekerjaan;
   if(item.assignedTo) document.getElementById("fPic").value = item.assignedTo;
+};
+
+// ---------------------------------------------------------------------
+// REFERENSI PO — rekap semua pekerjaan yang sudah keluar PO (checklist
+// kontrakPO tercentang), untuk dipakai acuan kontrak berikutnya (harga,
+// vendor, dll). Read-only, semua role bisa lihat & cari — datanya sama
+// dengan procurement_items, cuma disusun ulang dengan kolom fokus PO.
+// ---------------------------------------------------------------------
+let poRefSortKey = "tanggalPO";
+let poRefSortDir = "desc";
+
+function getPORefRows(){
+  return allItems
+    .filter(i => i.stages && i.stages.kontrakPO)
+    .map(i => {
+      const kontrakDetail = (i.stageDetails && i.stageDetails.kontrakPO) || {};
+      const pemenangDetail = (i.stageDetails && i.stageDetails.penetapanPemenang) || {};
+      return {
+        id: i.id,
+        nama: i.namaPekerjaan || "",
+        kategori: i.kategori || "",
+        disiplin: i.disiplin || "",
+        contractType: i.contractType || "",
+        planner: i.pic || "",
+        vendor: pemenangDetail.vendorPemenang || "",
+        nomorPO: kontrakDetail.nomorPO || "",
+        tanggalPO: kontrakDetail.tanggalPO || "",
+        nilai: kontrakDetail.nilaiPO || ""
+      };
+    });
+}
+
+window.setPORefSort = function(key){
+  if(poRefSortKey === key){ poRefSortDir = poRefSortDir === "asc" ? "desc" : "asc"; }
+  else { poRefSortKey = key; poRefSortDir = "desc"; }
+  window.renderPORefTable();
+};
+
+window.renderPORefTable = function(){
+  const tbody = document.getElementById("poRefTableBody");
+  const emptyState = document.getElementById("poRefEmptyState");
+  const kw = (document.getElementById("poRefSearch").value || "").trim().toLowerCase();
+  const fKat = document.getElementById("poRefFilterKategori").value;
+  const fDis = document.getElementById("poRefFilterDisiplin").value;
+
+  let rows = getPORefRows();
+
+  if(fKat) rows = rows.filter(r => (KATEGORI_KNOWN.includes(r.kategori) ? r.kategori : "Lainnya") === fKat);
+  if(fDis) rows = rows.filter(r => (["Static","Rotating","Instrument","Electrical"].includes(r.disiplin) ? r.disiplin : "Lainnya") === fDis);
+  if(kw){
+    rows = rows.filter(r => [r.nama, r.vendor, r.nomorPO, r.planner].filter(Boolean).join(" ").toLowerCase().includes(kw));
+  }
+
+  rows.sort((a,b) => {
+    let av = a[poRefSortKey], bv = b[poRefSortKey];
+    if(poRefSortKey === "tanggalPO"){ av = av || ""; bv = bv || ""; }
+    const cmp = String(av).localeCompare(String(bv), undefined, {numeric:true});
+    return poRefSortDir === "asc" ? cmp : -cmp;
+  });
+
+  if(rows.length === 0){
+    tbody.innerHTML = "";
+    emptyState.style.display = "block";
+    return;
+  }
+  emptyState.style.display = "none";
+
+  tbody.innerHTML = rows.map(r => `
+    <tr style="cursor:pointer;" onclick='window.switchView("list");window.openEditModal(${JSON.stringify(r.id)})'>
+      <td class="mono">${fmtDate(r.tanggalPO)}</td>
+      <td class="mono">${escapeHtml(r.nomorPO || "—")}</td>
+      <td>${escapeHtml(r.nama)}</td>
+      <td>${escapeHtml(r.kategori || "—")}</td>
+      <td>${escapeHtml(r.disiplin || "—")}</td>
+      <td>${escapeHtml(r.vendor || "—")}</td>
+      <td>${escapeHtml(r.contractType || "—")}</td>
+      <td class="mono">${escapeHtml(r.nilai || "—")}</td>
+      <td>${escapeHtml(r.planner || "—")}</td>
+    </tr>
+  `).join("");
+};
+
+window.exportPORefPdf = function(){
+  const rows = getPORefRows();
+  if(rows.length === 0){ alert("Belum ada data PO untuk diekspor."); return; }
+
+  const rowsHtml = rows.map(r => `
+    <tr>
+      <td>${fmtDate(r.tanggalPO)}</td>
+      <td>${escapeHtml(r.nomorPO || "—")}</td>
+      <td>${escapeHtml(r.nama)}</td>
+      <td>${escapeHtml(r.kategori || "—")}</td>
+      <td>${escapeHtml(r.disiplin || "—")}</td>
+      <td>${escapeHtml(r.vendor || "—")}</td>
+      <td>${escapeHtml(r.contractType || "—")}</td>
+      <td>${escapeHtml(r.nilai || "—")}</td>
+      <td>${escapeHtml(r.planner || "—")}</td>
+    </tr>
+  `).join("");
+
+  const now = new Date();
+  const generatedAt = now.toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' });
+  const fileTitle = `Referensi-PO_${now.toISOString().slice(0,10)}`;
+
+  const reportHtml = `
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<title>${escapeHtml(fileTitle)}</title>
+<style>
+  @page { size: A4 landscape; margin: 15mm; @bottom-center { content: "Halaman " counter(page) " dari " counter(pages); font-size: 9px; color: #8A93A0; } }
+  * { box-sizing: border-box; }
+  body{ font-family:'Arial','Helvetica',sans-serif; color:#1C2530; font-size:11px; margin:0; }
+  .hdr{ text-align:center; margin-bottom:16px; border-bottom:2px solid #1C2530; padding-bottom:10px; }
+  .hdr .company{ font-size:14px; font-weight:700; }
+  .hdr .sub{ font-size:11px; color:#5B6472; margin-top:2px; }
+  h1{ font-size:16px; margin:10px 0 4px; }
+  .metaRow{ font-size:10px; color:#5B6472; margin-bottom:14px; }
+  table{ width:100%; border-collapse:collapse; }
+  th, td{ border:1px solid #ccc; padding:5px 7px; text-align:left; font-size:10px; }
+  th{ background:#F0F0EE; font-weight:700; }
+</style>
+</head>
+<body>
+  <div class="hdr">
+    <div class="company">PT KILANG PERTAMINA BALIKPAPAN</div>
+    <div class="sub">Tim Planner - Technical Support</div>
+    <h1>Referensi PO — Riwayat Pengadaan Kontrak</h1>
+  </div>
+  <div class="metaRow">Dicetak: ${generatedAt} · Total ${rows.length} PO</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Tanggal PO</th><th>Nomor PO</th><th>Nama Pekerjaan</th><th>Kategori</th>
+        <th>Disiplin</th><th>Vendor Pemenang</th><th>Jenis Kontrak</th><th>Nilai PO</th><th>Planner</th>
+      </tr>
+    </thead>
+    <tbody>${rowsHtml}</tbody>
+  </table>
+</body>
+</html>
+  `;
+
+  const printWindow = window.open('', '_blank');
+  if(!printWindow){
+    alert("Browser memblokir pop-up. Izinkan pop-up untuk situs ini agar bisa export PDF.");
+    return;
+  }
+  printWindow.document.open();
+  printWindow.document.write(reportHtml);
+  printWindow.document.close();
+  printWindow.document.title = fileTitle;
+  printWindow.focus();
+  setTimeout(() => printWindow.print(), 350);
 };
 
 // ---------------------------------------------------------------------
