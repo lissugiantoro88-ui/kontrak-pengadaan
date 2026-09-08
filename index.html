@@ -922,7 +922,7 @@
               <th>Disiplin</th>
               <th class="sortable" onclick="window.setPORefSort('vendor')">Vendor Pemenang</th>
               <th>Jenis Kontrak</th>
-              <th class="sortable" onclick="window.setPORefSort('nilai')">Nilai PO</th>
+              <th class="sortable" onclick="window.setPORefSort('nilaiSort')">Nilai PO</th>
               <th>Planner</th>
             </tr>
           </thead>
@@ -1392,6 +1392,28 @@ const STAGE_GROUPS = [...new Set(STAGE_TEMPLATE.map(s => s.group))];
 // pengalaman, dokumen resmi seperti ini nyaris selalu perlu tanggal
 // sebagai referensi — kalau ternyata tidak perlu, gampang dihapus lagi.
 // ---------------------------------------------------------------------
+// Helper untuk field tipe "currency" (Nilai OE, Nilai PO): simpan sebagai
+// {currency, amount} — tapi data LAMA (sebelum fitur ini) tersimpan sebagai
+// teks bebas ("Rp 500.000.000" dll). Fungsi ini menangani keduanya dengan
+// aman supaya data lama tidak hilang/error, cuma tidak akurat kalau memang
+// tidak berupa angka murni.
+function parseCurrencyValue(raw){
+  if(raw && typeof raw === "object") return { currency: raw.currency || "IDR", amount: raw.amount ?? "" };
+  if(typeof raw === "string" && raw.trim()){
+    const digitsOnly = raw.replace(/[^\d]/g, "");
+    return { currency: "IDR", amount: digitsOnly || "" };
+  }
+  return { currency: "IDR", amount: "" };
+}
+function fmtCurrencyValue(raw){
+  if(!raw) return "";
+  if(typeof raw === "object"){
+    if(raw.amount === "" || raw.amount === null || raw.amount === undefined) return "";
+    return `${raw.currency || "IDR"} ${Number(raw.amount).toLocaleString('id-ID')}`;
+  }
+  return String(raw); // data lama berupa teks bebas — tampilkan apa adanya
+}
+
 const STAGE_DETAIL_FIELDS = {
   searching: [
     { key:"vendors", label:"Vendor yang Disourcing", type:"textarea", placeholder:"Satu vendor per baris" }
@@ -1404,7 +1426,7 @@ const STAGE_DETAIL_FIELDS = {
   ],
   oe: [
     { key:"polaPikir", label:"Pola Pikir OE", type:"select", options:["Last PO","Quotation Vendor"] },
-    { key:"nilaiOE", label:"Nilai OE", type:"text" },
+    { key:"nilaiOE", label:"Nilai OE", type:"currency" },
     { key:"note", label:"Note", type:"text" }
   ],
   izinMetode: [
@@ -1438,7 +1460,7 @@ const STAGE_DETAIL_FIELDS = {
   kontrakPO: [
     { key:"nomorPO", label:"Nomor PO", type:"text" },
     { key:"tanggalPO", label:"Tanggal PO", type:"date" },
-    { key:"nilaiPO", label:"Nilai PO", type:"text" }
+    { key:"nilaiPO", label:"Nilai PO", type:"currency" }
   ]
 };
 
@@ -1561,6 +1583,19 @@ function renderStageChecklist(savedStages, savedStageDetails){
                   ${f.options.map(opt => `<option value="${escapeHtml(opt)}" ${val === opt ? "selected" : ""}>${escapeHtml(opt)}</option>`).join("")}
                 </select>
               </div>`;
+          } else if(f.type === "currency"){
+            const cv = parseCurrencyValue(val);
+            html += `
+              <div class="stageDetailField">
+                <label>${f.label}</label>
+                <div style="display:flex;gap:6px;">
+                  <select id="stageDetail_${s.key}_${f.key}_currency" style="width:80px;flex-shrink:0;padding:6px 6px;border:1px solid var(--line);border-radius:5px;font-family:inherit;font-size:12.5px;">
+                    <option value="IDR" ${cv.currency === "IDR" ? "selected" : ""}>IDR</option>
+                    <option value="USD" ${cv.currency === "USD" ? "selected" : ""}>USD</option>
+                  </select>
+                  <input type="number" id="stageDetail_${s.key}_${f.key}_amount" value="${escapeHtml(String(cv.amount))}" placeholder="0" style="flex:1;">
+                </div>
+              </div>`;
           } else {
             html += `
               <div class="stageDetailField">
@@ -1642,10 +1677,18 @@ function getStageDetailsFromForm(){
     const obj = {};
     let hasValue = false;
     STAGE_DETAIL_FIELDS[key].forEach(f => {
-      const el = document.getElementById(`stageDetail_${key}_${f.key}`);
-      const val = el ? el.value.trim() : "";
-      obj[f.key] = val;
-      if(val) hasValue = true;
+      if(f.type === "currency"){
+        const currEl = document.getElementById(`stageDetail_${key}_${f.key}_currency`);
+        const amtEl = document.getElementById(`stageDetail_${key}_${f.key}_amount`);
+        const amount = amtEl ? amtEl.value.trim() : "";
+        obj[f.key] = amount ? { currency: currEl ? currEl.value : "IDR", amount: Number(amount) } : "";
+        if(amount) hasValue = true;
+      } else {
+        const el = document.getElementById(`stageDetail_${key}_${f.key}`);
+        const val = el ? el.value.trim() : "";
+        obj[f.key] = val;
+        if(val) hasValue = true;
+      }
     });
     if(hasValue) result[key] = obj;
   });
@@ -2279,6 +2322,7 @@ function getPORefRows(){
     .map(i => {
       const kontrakDetail = (i.stageDetails && i.stageDetails.kontrakPO) || {};
       const pemenangDetail = (i.stageDetails && i.stageDetails.penetapanPemenang) || {};
+      const nilaiRaw = kontrakDetail.nilaiPO || "";
       return {
         id: i.id,
         nama: i.namaPekerjaan || "",
@@ -2289,7 +2333,8 @@ function getPORefRows(){
         vendor: pemenangDetail.vendorPemenang || "",
         nomorPO: kontrakDetail.nomorPO || "",
         tanggalPO: kontrakDetail.tanggalPO || "",
-        nilai: kontrakDetail.nilaiPO || ""
+        nilai: fmtCurrencyValue(nilaiRaw), // untuk tampilan (sudah ada keterangan mata uang)
+        nilaiSort: (nilaiRaw && typeof nilaiRaw === "object") ? Number(nilaiRaw.amount) || 0 : 0 // untuk sort numerik murni
       };
     });
 }
@@ -2317,6 +2362,10 @@ window.renderPORefTable = function(){
 
   rows.sort((a,b) => {
     let av = a[poRefSortKey], bv = b[poRefSortKey];
+    if(poRefSortKey === "nilaiSort"){
+      const cmp = (av || 0) - (bv || 0);
+      return poRefSortDir === "asc" ? cmp : -cmp;
+    }
     if(poRefSortKey === "tanggalPO"){ av = av || ""; bv = bv || ""; }
     const cmp = String(av).localeCompare(String(bv), undefined, {numeric:true});
     return poRefSortDir === "asc" ? cmp : -cmp;
@@ -3237,7 +3286,11 @@ window.printSingleItem = function(){
       let detailText = "";
       if(detail){
         const fields = STAGE_DETAIL_FIELDS[s.key] || [];
-        detailText = fields.map(f => detail[f.key] ? `${f.label}: ${detail[f.key]}` : "").filter(Boolean).join(" · ");
+        detailText = fields.map(f => {
+          if(!detail[f.key]) return "";
+          const displayVal = f.type === "currency" ? fmtCurrencyValue(detail[f.key]) : detail[f.key];
+          return displayVal ? `${f.label}: ${displayVal}` : "";
+        }).filter(Boolean).join(" · ");
       }
       return `
         <tr>
