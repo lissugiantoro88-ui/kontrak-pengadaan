@@ -117,13 +117,19 @@
     padding:14px 18px;margin-bottom:16px;
   }
   .priorityAlertBanner .priorityAlertHeader{
-    display:flex;align-items:center;gap:8px;font-weight:600;color:#9A7717;
+    display:flex;align-items:center;justify-content:space-between;font-weight:600;color:#9A7717;
     font-size:13.5px;margin-bottom:10px;
   }
   .priorityAlertBanner .priorityAlertHeader .badgeCount{
     background:#C79A2E;color:#fff;font-family:'IBM Plex Mono',monospace;
-    font-size:11px;padding:1px 8px;border-radius:10px;
+    font-size:11px;padding:1px 8px;border-radius:10px;margin-left:6px;
   }
+  .priorityBannerBtn{
+    background:none;border:none;color:#9A7717;cursor:pointer;
+    width:24px;height:24px;border-radius:5px;font-size:15px;line-height:1;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .priorityBannerBtn:hover{background:rgba(154,119,23,0.12);}
   .priorityAlertItem{
     background:#fff;border-radius:6px;padding:9px 12px;margin-bottom:6px;cursor:pointer;
     border:1px solid #E8C468;
@@ -2071,6 +2077,8 @@ onAuthStateChanged(auth, async (user) => {
     currentUser = null;
     currentRole = null;
     hasAppliedDefaultMyTasks = false;
+    priorityBannerClosed = false;
+    priorityBannerCollapsed = false;
     stopPresenceHeartbeat();
     stopPresenceWatch();
     stopIdleWatcher();
@@ -3193,20 +3201,36 @@ window.goFilterSignal = function(sig){
 // Selesai/Hold/Cancel dikecualikan — menandai prioritas pada sesuatu yang
 // sudah tidak aktif dikerjakan tidak actionable, jadi tidak perlu tampil.
 // ---------------------------------------------------------------------
+let priorityBannerCollapsed = false; // state minimize, reset tiap buka app baru (tidak disimpan permanen)
+let priorityBannerClosed = false; // state tutup penuh, bertahan sepanjang sesi sampai logout/reload
+const PRIORITY_BANNER_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 1 hari — setelah ini, banner hilang (badge di tabel tetap ada)
+
 function renderPriorityAlertBanner(){
-  const flagged = allItems.filter(i => i.isPriority && getTotalProgress(i) < 100 && !i.statusKontrak);
+  if(priorityBannerClosed) return "";
+
+  // Hanya tampilkan yang ditandai DALAM 24 JAM TERAKHIR — banner ini
+  // fungsinya notifikasi "baru saja ditandai", bukan pengingat selamanya.
+  // Penanda permanen tetap ada lewat badge ⭐ di baris tabel utama.
+  const now = Date.now();
+  const flagged = allItems.filter(i => {
+    if(!i.isPriority || getTotalProgress(i) >= 100 || i.statusKontrak) return false;
+    const ms = tsMillis(i.priorityMarkedAt);
+    if(!ms) return false; // tanpa jejak waktu (data lama) — tidak bisa dipastikan masih baru, jangan tampilkan di banner
+    return (now - ms) <= PRIORITY_BANNER_MAX_AGE_MS;
+  });
   if(flagged.length === 0) return "";
 
   flagged.sort((a, b) => tsMillis(b.priorityMarkedAt) - tsMillis(a.priorityMarkedAt));
 
   const itemsHtml = flagged.map(i => {
     const ms = tsMillis(i.priorityMarkedAt);
-    const days = ms ? Math.floor((Date.now() - ms) / 86400000) : null;
+    const hours = ms ? Math.max(0, Math.floor((now - ms) / 3600000)) : null;
+    const waktuText = hours === null ? "" : hours < 1 ? "Baru saja" : `${hours} jam lalu`;
     return `
       <div class="priorityAlertItem" onclick='window.switchView("list");window.openEditModal(${JSON.stringify(i.id)})'>
         <div class="priorityAlertName">${escapeHtml(i.namaPekerjaan)}</div>
         <div class="priorityAlertMeta">
-          Planner: ${escapeHtml(i.pic || "—")} · Ditandai oleh: ${escapeHtml(i.priorityMarkedBy || "—")}${days !== null ? ` · ${days} hari lalu` : ""}
+          Planner: ${escapeHtml(i.pic || "—")} · Ditandai oleh: ${escapeHtml(i.priorityMarkedBy || "—")}${waktuText ? ` · ${waktuText}` : ""}
         </div>
         ${i.priorityNote ? `<div class="priorityAlertNote">"${escapeHtml(i.priorityNote)}"</div>` : ""}
       </div>
@@ -3216,13 +3240,25 @@ function renderPriorityAlertBanner(){
   return `
     <div class="priorityAlertBanner">
       <div class="priorityAlertHeader">
-        ⭐ Pekerjaan Prioritas
-        <span class="badgeCount">${flagged.length}</span>
+        <span>⭐ Pekerjaan Prioritas <span class="badgeCount">${flagged.length}</span></span>
+        <div style="display:flex;gap:4px;">
+          <button class="priorityBannerBtn" onclick="window.togglePriorityBanner()" title="${priorityBannerCollapsed ? 'Perluas' : 'Perkecil'}">${priorityBannerCollapsed ? "▾" : "▴"}</button>
+          <button class="priorityBannerBtn" onclick="window.closePriorityBanner()" title="Tutup">&times;</button>
+        </div>
       </div>
-      ${itemsHtml}
+      ${priorityBannerCollapsed ? "" : itemsHtml}
     </div>
   `;
 }
+
+window.togglePriorityBanner = function(){
+  priorityBannerCollapsed = !priorityBannerCollapsed;
+  document.getElementById("priorityAlertContainer").innerHTML = renderPriorityAlertBanner();
+};
+window.closePriorityBanner = function(){
+  priorityBannerClosed = true;
+  document.getElementById("priorityAlertContainer").innerHTML = "";
+};
 
 function renderManagementAlertBanner(){
   const flagged = allItems.filter(i => i.needsManagementSupport);
