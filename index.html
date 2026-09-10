@@ -502,6 +502,11 @@
     font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);
     background:#F0F0EE;padding:2px 6px;border-radius:4px;
   }
+  .slaBadge{
+    font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;
+    white-space:nowrap;text-transform:uppercase;letter-spacing:.02em;
+  }
+  .slaBadgeEmpty{background:none;padding:0;}
   .stageRow.stageRowDisabled{opacity:0.4;transition:opacity .2s;}
   .stageRow.stageRowDisabled input[type=checkbox],
   .stageRow.stageRowDisabled label{cursor:not-allowed;}
@@ -1377,15 +1382,27 @@
         <input type="text" id="fPic" placeholder="Nama planner">
       </div>
       <div class="field">
-        <label>Target Selesai</label>
-        <input type="date" id="fTarget">
-        <div class="hint" id="targetEditHint"></div>
+        <label>Tanggal Mulai Proses</label>
+        <input type="date" id="fStartDate" onchange="window.onStartDateChange()">
+        <div class="hint">Dasar hitung Target per Tahap otomatis (total 36 minggu).</div>
       </div>
     </div>
 
-    <div class="field">
-      <label>Effective Date / Tanggal Habis Kontrak <span class="hint" style="display:inline;">(khusus kontrak berjalan)</span></label>
-      <input type="date" id="fEffective">
+    <div class="modalRow2">
+      <div class="field">
+        <label>Target Selesai <span class="hint" style="display:inline;">(otomatis, direvisi manager/senior planner/admin)</span></label>
+        <input type="date" id="fTarget" onchange="window.onTargetManualChange()">
+        <div class="hint" id="targetEditHint"></div>
+      </div>
+      <div class="field">
+        <label>Effective Date / Tanggal Habis Kontrak <span class="hint" style="display:inline;">(khusus kontrak berjalan)</span></label>
+        <input type="date" id="fEffective">
+      </div>
+    </div>
+
+    <div class="field" id="targetRevisionReasonWrap" style="display:none;">
+      <label>Alasan Revisi Target <span class="hint" style="display:inline;">(wajib diisi kalau tanggal di atas diubah manual)</span></label>
+      <input type="text" id="fTargetRevisionReason" placeholder="mis. Menunggu approval budget tambahan dari Manajemen">
     </div>
 
     <!-- Checklist sub-tahap berbobot -->
@@ -1512,6 +1529,70 @@ const STAGE_TEMPLATE = [
   { key:"kontrakPO", label:"Pembuatan Kontrak / Approval PO", weight:5, group:"Proses Tender" }
 ];
 const STAGE_GROUPS = [...new Set(STAGE_TEMPLATE.map(s => s.group))];
+
+// ---------------------------------------------------------------------
+// TARGET PER TAHAP — durasi standar per sub-tahap dalam MINGGU, dari
+// timeline proses tender/pengadaan yang disepakati (total 36 minggu).
+// Ini INDIKATOR VISUAL saja, TIDAK mengunci apa pun — planner tetap bisa
+// centang checklist kapan saja terlepas status target-nya.
+// ---------------------------------------------------------------------
+const STAGE_SLA_WEEKS = {
+  searching:4, quotation:3, lingkupKAK:2, oe:2, tkdn:2, izinMetode:3,
+  berkasProcurement:1, preBid:3, evaluasiNegosiasi:2, lhp:1, penetapanPemenang:1, kontrakPO:12
+};
+const TOTAL_SLA_WEEKS = Object.values(STAGE_SLA_WEEKS).reduce((s,w) => s+w, 0); // 36
+const SLA_WARNING_BUFFER_DAYS = 3; // sisa hari di bawah ini dianggap "Mendekati Batas" (kuning)
+
+function addDaysISO(dateStr, days){
+  const d = dateStr ? new Date(dateStr + "T00:00:00") : new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+function getStageCumulativeWeeks(stageKey){
+  let sum = 0;
+  for(const s of STAGE_TEMPLATE){
+    sum += STAGE_SLA_WEEKS[s.key] || 0;
+    if(s.key === stageKey) break;
+  }
+  return sum;
+}
+function getStageTargetDate(startDate, stageKey){
+  if(!startDate) return "";
+  return addDaysISO(startDate, getStageCumulativeWeeks(stageKey) * 7);
+}
+function computeAutoTargetSelesai(startDate){
+  if(!startDate) return "";
+  return addDaysISO(startDate, TOTAL_SLA_WEEKS * 7);
+}
+
+// Status target per sub-tahap: 'ontrack' (hijau), 'warning' (kuning),
+// 'late' (merah), atau null (belum bisa dihitung — belum ada tanggal mulai).
+function getStageSLAStatus(item, stageKey){
+  const startDate = item ? item.startDate : document.getElementById("fStartDate").value;
+  if(!startDate) return null;
+  const targetDate = getStageTargetDate(startDate, stageKey);
+  const isChecked = item ? !!(item.stages && item.stages[stageKey]) : !!(document.getElementById(`stage_${stageKey}`) && document.getElementById(`stage_${stageKey}`).checked);
+
+  if(isChecked){
+    const completedAtRaw = item && item.stageTimestamps ? item.stageTimestamps[stageKey] : null;
+    const completedMs = tsMillis(completedAtRaw);
+    if(!completedMs) return null; // selesai tapi tidak ada jejak waktu (data lama) — tidak bisa dinilai
+    const targetMs = new Date(targetDate + "T23:59:59").getTime();
+    return completedMs <= targetMs ? "ontrack" : "late";
+  } else {
+    const todayMs = Date.now();
+    const targetMs = new Date(targetDate + "T23:59:59").getTime();
+    const daysLeft = Math.ceil((targetMs - todayMs) / 86400000);
+    if(daysLeft < 0) return "late";
+    if(daysLeft <= SLA_WARNING_BUFFER_DAYS) return "warning";
+    return "ontrack";
+  }
+}
+const SLA_STATUS_DEF = {
+  ontrack: { label:"On Track", color:"var(--green)", bg:"var(--green-soft)" },
+  warning: { label:"Mendekati Batas", color:"var(--amber)", bg:"var(--amber-soft)" },
+  late:    { label:"Lewat Target", color:"var(--red)", bg:"var(--red-soft)" }
+};
 
 // ---------------------------------------------------------------------
 // Field detail tambahan per sub-tahap — muncul otomatis di bawah checklist
@@ -1641,6 +1722,7 @@ let idleTimer = null;
 const IDLE_TIMEOUT_MS = 10 * 60 * 1000; // 10 menit tanpa aktivitas → auto logout
 const IDLE_EVENTS = ["mousemove", "mousedown", "keydown", "scroll", "touchstart", "click"];
 let dashDetailExpanded = false; // supaya panel rincian tidak tertutup ulang tiap kali search diketik
+let targetManuallySetFlag = false; // true kalau target sudah pernah direvisi manual — startDate tidak lagi otomatis timpa
 let hasAppliedDefaultMyTasks = false; // reset per sesi login (lihat stopPresenceHeartbeat dkk saat logout)
 
 // ---------------------------------------------------------------------
@@ -1658,6 +1740,25 @@ window.onDisiplinChange = function(){
   const v = document.getElementById("fDisiplin").value;
   document.getElementById("disiplinLainnyaWrap").style.display = v === "Lainnya" ? "block" : "none";
 };
+
+// Ubah Tanggal Mulai Proses → target ikut hitung ulang OTOMATIS, TAPI HANYA
+// kalau target belum pernah direvisi manual sebelumnya (targetManuallySetFlag
+// false). Kalau sudah pernah direvisi manual, jangan timpa keputusan itu.
+window.onStartDateChange = function(){
+  if(targetManuallySetFlag) return;
+  const startDate = document.getElementById("fStartDate").value;
+  document.getElementById("fTarget").value = computeAutoTargetSelesai(startDate);
+  window.updateProgressPreview(); // refresh badge SLA di checklist (basis tanggal berubah)
+};
+
+// User mengetik langsung ke field Target Selesai → mulai sekarang dianggap
+// revisi manual, minta alasan wajib, dan startDate tidak akan menimpanya lagi.
+window.onTargetManualChange = function(){
+  targetManuallySetFlag = true;
+  const canEditTarget = ["admin", "manager", "senior_planner"].includes(currentRole);
+  document.getElementById("targetRevisionReasonWrap").style.display = canEditTarget ? "block" : "none";
+};
+
 window.onPriorityChange = function(){
   const checked = document.getElementById("fPriority").checked;
   document.getElementById("priorityNoteWrap").style.display = checked ? "block" : "none";
@@ -1691,19 +1792,24 @@ window.onHoldCancelChange = function(source){
 // ---------------------------------------------------------------------
 // Render checklist sub-tahap di dalam modal
 // ---------------------------------------------------------------------
-function renderStageChecklist(savedStages, savedStageDetails){
+function renderStageChecklist(item){
   const container = document.getElementById("stageChecklist");
-  const stages = savedStages || {};
-  const details = savedStageDetails || {};
+  const stages = (item && item.stages) || {};
+  const details = (item && item.stageDetails) || {};
   let html = "";
   STAGE_GROUPS.forEach(group => {
     html += `<div class="stageGroup"><div class="stageGroupTitle">${group}</div>`;
     STAGE_TEMPLATE.filter(s => s.group === group).forEach(s => {
       const checked = stages[s.key] ? "checked" : "";
+      const slaStatus = getStageSLAStatus(item, s.key);
+      const slaBadge = slaStatus
+        ? `<span class="slaBadge" id="slaBadge_${s.key}" style="background:${SLA_STATUS_DEF[slaStatus].bg};color:${SLA_STATUS_DEF[slaStatus].color};">${SLA_STATUS_DEF[slaStatus].label}</span>`
+        : `<span class="slaBadge slaBadgeEmpty" id="slaBadge_${s.key}"></span>`;
       html += `
         <div class="stageRow" data-key="${s.key}">
           <input type="checkbox" id="stage_${s.key}" data-weight="${s.weight}" ${checked} onchange="window.updateProgressPreview()">
           <label for="stage_${s.key}">${s.label}</label>
+          ${slaBadge}
           <span class="weight">${s.weight} poin</span>
         </div>`;
 
@@ -1800,9 +1906,29 @@ function toggleAllStageDetailPanels(){
   });
 }
 
+function refreshSLABadges(){
+  STAGE_TEMPLATE.forEach(s => {
+    const badge = document.getElementById(`slaBadge_${s.key}`);
+    if(!badge) return;
+    const status = getStageSLAStatus(null, s.key);
+    if(status){
+      badge.className = "slaBadge";
+      badge.style.background = SLA_STATUS_DEF[status].bg;
+      badge.style.color = SLA_STATUS_DEF[status].color;
+      badge.textContent = SLA_STATUS_DEF[status].label;
+    } else {
+      badge.className = "slaBadge slaBadgeEmpty";
+      badge.style.background = "";
+      badge.style.color = "";
+      badge.textContent = "";
+    }
+  });
+}
+
 window.updateProgressPreview = function(){
   applyStageGating();
   toggleAllStageDetailPanels();
+  refreshSLABadges();
   const total = calcTotalProgress();
   const el = document.getElementById("pctBigDisplay");
   el.textContent = total + "%";
@@ -2685,7 +2811,7 @@ function stopIdleWatcher(){
 // ---------------------------------------------------------------------
 const FIELD_LABELS = {
   namaPekerjaan: "Nama Pekerjaan", kategori: "Kategori", contractType: "Jenis Kontrak", disiplin: "Disiplin",
-  pic: "Planner", targetSelesai: "Target Selesai", effectiveDate: "Effective Date",
+  pic: "Planner", startDate: "Tanggal Mulai Proses", targetSelesai: "Target Selesai", effectiveDate: "Effective Date",
   progressNote: "Catatan Progress", keterangan: "Keterangan", dasarPengadaan: "Dasar Pengadaan",
   managementSupportNote: "Detail Kendala Manajemen"
 };
@@ -4326,7 +4452,12 @@ window.openAddModal = function(){
   document.getElementById("fDisiplin").value = "Static";
   resetLainnyaWraps();
   document.getElementById("fPic").value = ["planner", "senior_planner"].includes(currentRole) ? currentPicName : "";
-  document.getElementById("fTarget").value = "";
+  const todayISO = new Date().toISOString().slice(0, 10);
+  document.getElementById("fStartDate").value = todayISO;
+  document.getElementById("fTarget").value = computeAutoTargetSelesai(todayISO);
+  targetManuallySetFlag = false;
+  document.getElementById("targetRevisionReasonWrap").style.display = "none";
+  document.getElementById("fTargetRevisionReason").value = "";
   document.getElementById("fEffective").value = "";
   document.getElementById("fProgressNote").value = "";
   document.getElementById("fDasarPengadaan").innerHTML = "";
@@ -4347,7 +4478,7 @@ window.openAddModal = function(){
   document.getElementById("targetEditHint").textContent = "";
   document.getElementById("btnDelete").style.display = "none";
   document.getElementById("btnPrintItem").style.display = "none";
-  renderStageChecklist(null, null);
+  renderStageChecklist(null);
   setFieldPermissions(false);
   document.getElementById("itemModal").classList.add("show");
 };
@@ -4389,7 +4520,11 @@ window.openEditModal = function(id){
   }
 
   document.getElementById("fPic").value = item.pic || "";
+  document.getElementById("fStartDate").value = item.startDate || "";
   document.getElementById("fTarget").value = item.targetSelesai || "";
+  targetManuallySetFlag = !!item.targetManuallySet;
+  document.getElementById("targetRevisionReasonWrap").style.display = "none";
+  document.getElementById("fTargetRevisionReason").value = "";
   document.getElementById("fEffective").value = item.effectiveDate || "";
   document.getElementById("fProgressNote").value = item.progressNote || "";
   document.getElementById("fDasarPengadaan").innerHTML = item.dasarPengadaan || "";
@@ -4421,10 +4556,16 @@ window.openEditModal = function(id){
   document.getElementById("fPriorityNote").value = item.priorityNote || "";
   document.getElementById("priorityNoteWrap").style.display = item.isPriority ? "block" : "none";
   document.getElementById("modalErr").textContent = "";
-  renderStageChecklist(item.stages, item.stageDetails);
+  renderStageChecklist(item);
 
   const hint = document.getElementById("targetEditHint");
-  hint.textContent = item.targetLastEditedBy ? `Terakhir diubah oleh ${item.targetLastEditedBy}` : "";
+  if(item.targetManuallySet && item.targetLastEditedBy){
+    hint.textContent = `Direvisi manual oleh ${item.targetLastEditedBy}${item.targetRevisionReason ? ` — alasan: "${item.targetRevisionReason}"` : ""}`;
+  } else if(item.targetSelesai){
+    hint.textContent = "Dihitung otomatis dari Tanggal Mulai Proses (36 minggu).";
+  } else {
+    hint.textContent = "";
+  }
 
   document.getElementById("btnDelete").style.display = ["planner", "admin", "senior_planner"].includes(currentRole) ? "inline-flex" : "none";
   document.getElementById("btnSaveItem").style.display = currentRole === "viewer" ? "none" : "inline-flex";
@@ -4440,15 +4581,19 @@ function setFieldPermissions(isEdit){
   const managerOnly = currentRole === "manager" && isEdit;
   const readOnlyAll = isViewer || managerOnly;
   const fields = ["fNama","fKategori","fKategoriLainnya","fContractType","fContractTypeLainnya","fDisiplin","fDisiplinLainnya",
-                  "fPic","fEffective","fProgressNote","fKet","fNeedsManagement","fManagementNote",
+                  "fPic","fStartDate","fEffective","fProgressNote","fKet","fNeedsManagement","fManagementNote",
                   "fStatusHold","fStatusCancel","fHoldCancelNote"];
   fields.forEach(id => { document.getElementById(id).disabled = readOnlyAll; });
   document.querySelectorAll("#stageChecklist input[type=checkbox]").forEach(cb => { cb.disabled = readOnlyAll; });
   document.querySelectorAll(".stageDetailPanel input, .stageDetailPanel textarea, .stageDetailPanel select").forEach(el => { el.disabled = readOnlyAll; });
   // contenteditable bukan <input>, tidak punya properti "disabled" — dikunci via attribute contenteditable.
   document.getElementById("fDasarPengadaan").contentEditable = readOnlyAll ? "false" : "true";
-  // Target tanggal: planner/admin/senior_planner/manager boleh isi — viewer TIDAK sama sekali.
-  document.getElementById("fTarget").disabled = isViewer;
+  // Target Selesai: SEKARANG otomatis dihitung sistem — HANYA
+  // admin/manager/senior_planner yang boleh revisi manual. Planner tidak
+  // bisa mengubah "ukuran" kinerjanya sendiri (sama prinsip dengan Priority).
+  const canEditTarget = ["admin", "manager", "senior_planner"].includes(currentRole);
+  document.getElementById("fTarget").disabled = !canEditTarget;
+  document.getElementById("fTargetRevisionReason").disabled = !canEditTarget;
   document.getElementById("fPriority").disabled = isViewer;
   document.getElementById("fPriorityNote").disabled = isViewer;
 }
@@ -4471,6 +4616,14 @@ window.saveItem = async function(){
       const existingForLog = allItems.find(i => i.id === id);
       const isPriorityNow = document.getElementById("fPriority").checked;
       const wasPriorityBefore = existingForLog ? !!existingForLog.isPriority : false;
+      const oldTarget = existingForLog ? existingForLog.targetSelesai : "";
+      const targetChangedByManager = targetVal !== oldTarget;
+      const revisionReason = document.getElementById("fTargetRevisionReason").value.trim();
+
+      if(targetChangedByManager && !revisionReason){
+        errEl.textContent = "Alasan revisi target wajib diisi kalau tanggal target diubah.";
+        return;
+      }
 
       const managerPayload = {
         targetSelesai: targetVal,
@@ -4480,6 +4633,10 @@ window.saveItem = async function(){
         priorityNote: isPriorityNow ? document.getElementById("fPriorityNote").value.trim() : "",
         updatedAt: serverTimestamp()
       };
+      if(targetChangedByManager){
+        managerPayload.targetManuallySet = true;
+        managerPayload.targetRevisionReason = revisionReason;
+      }
       if(isPriorityNow && !wasPriorityBefore){
         managerPayload.priorityMarkedBy = currentName;
         managerPayload.priorityMarkedAt = serverTimestamp();
@@ -4490,7 +4647,7 @@ window.saveItem = async function(){
 
       await updateDoc(doc(db, "procurement_items", id), managerPayload);
 
-      const summaryParts = [`Target Selesai: "${(existingForLog && existingForLog.targetSelesai) || "—"}" → "${targetVal || "—"}"`];
+      const summaryParts = [`Target Selesai: "${oldTarget || "—"}" → "${targetVal || "—"}"${revisionReason ? ` (alasan: ${revisionReason})` : ""}`];
       if(isPriorityNow !== wasPriorityBefore){
         summaryParts.push(isPriorityNow ? "⭐ Ditandai Prioritas" : "Tanda Prioritas dicabut");
       }
@@ -4505,6 +4662,18 @@ window.saveItem = async function(){
       return;
     }
 
+    const canEditTargetNow = ["admin", "manager", "senior_planner"].includes(currentRole);
+    const originalItemForTarget = id ? allItems.find(i => i.id === id) : null;
+    const originalTargetValue = originalItemForTarget ? (originalItemForTarget.targetSelesai || "") : "";
+    // Bandingkan NILAI langsung (bukan cuma flag "field pernah disentuh") —
+    // supaya buka-simpan ulang item yang SUDAH pernah direvisi sebelumnya,
+    // tanpa menyentuh field target sama sekali, TIDAK salah diminta alasan lagi.
+    const targetChangedThisSave = id ? (targetVal !== originalTargetValue) : false;
+    if(targetChangedThisSave && canEditTargetNow && !document.getElementById("fTargetRevisionReason").value.trim()){
+      errEl.textContent = "Alasan revisi target wajib diisi kalau tanggal target diubah manual.";
+      return;
+    }
+
     let kategori = document.getElementById("fKategori").value;
     if(kategori === "Lainnya") kategori = document.getElementById("fKategoriLainnya").value.trim() || "Lainnya";
     let contractType = document.getElementById("fContractType").value;
@@ -4516,6 +4685,24 @@ window.saveItem = async function(){
     const existingItem = id ? allItems.find(i => i.id === id) : null;
     const oldStages = existingItem ? existingItem.stages : null;
     const stagesChanged = !oldStages || STAGE_TEMPLATE.some(s => !!oldStages[s.key] !== !!newStages[s.key]);
+
+    // Jejak waktu PER SUB-TAHAP — dasar hitung status Target per Tahap.
+    // Hanya distempel PERSIS saat transisi belum-centang -> centang (bukan
+    // tiap kali disimpan). Kalau dilepas centangnya, jejak waktu dihapus.
+    const oldStageTimestamps = existingItem ? (existingItem.stageTimestamps || {}) : {};
+    const newStageTimestamps = { ...oldStageTimestamps };
+    let stageTimestampsChanged = false;
+    STAGE_TEMPLATE.forEach(s => {
+      const wasChecked = oldStages ? !!oldStages[s.key] : false;
+      const isChecked = !!newStages[s.key];
+      if(isChecked && !wasChecked){
+        newStageTimestamps[s.key] = serverTimestamp();
+        stageTimestampsChanged = true;
+      } else if(!isChecked && wasChecked){
+        delete newStageTimestamps[s.key];
+        stageTimestampsChanged = true;
+      }
+    });
 
     const needsManagement = document.getElementById("fNeedsManagement").checked;
     const wasNeedsManagement = existingItem ? !!existingItem.needsManagementSupport : false;
@@ -4539,6 +4726,7 @@ window.saveItem = async function(){
       contractType: contractType,
       disiplin: disiplin,
       pic: document.getElementById("fPic").value.trim(),
+      startDate: document.getElementById("fStartDate").value,
       targetSelesai: targetVal,
       effectiveDate: document.getElementById("fEffective").value,
       progressNote: document.getElementById("fProgressNote").value.trim(),
@@ -4577,6 +4765,19 @@ window.saveItem = async function(){
     // disertakan di payload, nilai lama di Firestore tetap utuh (updateDoc
     // hanya menyentuh field yang ada di payload).
     if(stagesChanged) payload.progressUpdatedAt = serverTimestamp();
+    if(stageTimestampsChanged) payload.stageTimestamps = newStageTimestamps;
+
+    // Target Selesai: kalau NILAI-nya benar-benar berubah dibanding
+    // sebelumnya (targetChangedThisSave — bukan cuma "field pernah
+    // disentuh"), catat sebagai revisi resmi + alasannya. Kalau tidak
+    // berubah, target tetap dianggap hasil hitung otomatis (field
+    // targetManuallySet TIDAK disentuh — biarkan nilai lama apa adanya).
+    if(targetChangedThisSave && canEditTargetNow){
+      payload.targetManuallySet = true;
+      payload.targetRevisionReason = document.getElementById("fTargetRevisionReason").value.trim();
+      payload.targetLastEditedBy = currentName;
+      payload.targetLastEditedAt = serverTimestamp();
+    }
 
     if(id){
       const changesSummary = buildChangeSummary(existingItem, payload);
