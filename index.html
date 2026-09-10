@@ -1390,7 +1390,7 @@
 
     <div class="modalRow2">
       <div class="field">
-        <label>Target Selesai <span class="hint" style="display:inline;">(otomatis, direvisi manager/senior planner/admin)</span></label>
+        <label>Target Selesai <span class="hint" style="display:inline;">(auto)</span></label>
         <input type="date" id="fTarget" onchange="window.onTargetManualChange()">
         <div class="hint" id="targetEditHint"></div>
       </div>
@@ -1401,8 +1401,8 @@
     </div>
 
     <div class="field" id="targetRevisionReasonWrap" style="display:none;">
-      <label>Alasan Revisi Target <span class="hint" style="display:inline;">(wajib diisi kalau tanggal di atas diubah manual)</span></label>
-      <input type="text" id="fTargetRevisionReason" placeholder="mis. Menunggu approval budget tambahan dari Manajemen">
+      <label>Alasan Revisi Target</label>
+      <input type="text" id="fTargetRevisionReason">
     </div>
 
     <!-- Checklist sub-tahap berbobot -->
@@ -4621,7 +4621,7 @@ window.saveItem = async function(){
       const revisionReason = document.getElementById("fTargetRevisionReason").value.trim();
 
       if(targetChangedByManager && !revisionReason){
-        errEl.textContent = "Alasan revisi target wajib diisi kalau tanggal target diubah.";
+        errEl.textContent = "Alasan revisi target wajib diisi.";
         return;
       }
 
@@ -4670,7 +4670,7 @@ window.saveItem = async function(){
     // tanpa menyentuh field target sama sekali, TIDAK salah diminta alasan lagi.
     const targetChangedThisSave = id ? (targetVal !== originalTargetValue) : false;
     if(targetChangedThisSave && canEditTargetNow && !document.getElementById("fTargetRevisionReason").value.trim()){
-      errEl.textContent = "Alasan revisi target wajib diisi kalau tanggal target diubah manual.";
+      errEl.textContent = "Alasan revisi target wajib diisi.";
       return;
     }
 
