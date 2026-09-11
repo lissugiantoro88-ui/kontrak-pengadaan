@@ -167,6 +167,16 @@
     color:#fff;background:var(--red);padding:1px 7px;border-radius:8px;margin-left:8px;
     vertical-align:middle;text-transform:uppercase;letter-spacing:.02em;
   }
+  .aheadFlagBadge{
+    display:inline-block;font-size:10px;font-family:'IBM Plex Mono',monospace;font-weight:600;
+    color:#fff;background:#6B4FA0;padding:1px 7px;border-radius:8px;margin-left:8px;
+    vertical-align:middle;text-transform:uppercase;letter-spacing:.02em;
+  }
+  .retroactiveCheck{
+    display:flex;align-items:center;gap:9px;cursor:pointer;font-size:12.5px;
+    color:var(--ink-soft);margin-bottom:6px;
+  }
+  .retroactiveCheck input[type=checkbox]{width:15px;height:15px;cursor:pointer;}
 
   /* ===== HOLD / CANCEL ===== */
   .holdCancelBox{
@@ -1302,6 +1312,7 @@
   <div class="modalBox" style="position:relative;">
     <button class="modalCloseX" onclick="window.closeModal()" title="Tutup" aria-label="Tutup">&times;</button>
     <h2 id="modalTitle">Tambah Pekerjaan</h2>
+    <div class="hint" id="readOnlyOwnerNotice" style="display:none;background:#F0F0EE;padding:8px 12px;border-radius:6px;margin-bottom:14px;">👁️ Anda hanya bisa melihat pekerjaan ini — bukan pekerjaan Anda, jadi tidak bisa diedit.</div>
     <input type="hidden" id="itemId">
 
     <div class="field">
@@ -1387,6 +1398,12 @@
         <div class="hint">Dasar hitung Target per Tahap otomatis (total 36 minggu).</div>
       </div>
     </div>
+
+    <label class="retroactiveCheck">
+      <input type="checkbox" id="fRetroactive" onchange="window.onRetroactiveChange()">
+      <span>Pekerjaan ini sudah berjalan/selesai sebelum diinput ke sistem (data historis)</span>
+    </label>
+    <div class="hint" id="retroactiveHint" style="margin-bottom:14px;display:none;">Badge Target per Tahap dimatikan untuk pekerjaan ini — jejak waktu checklist tidak mencerminkan kapan benar-benar dikerjakan di dunia nyata, jadi tidak adil dinilai cepat/lambat.</div>
 
     <div class="modalRow2">
       <div class="field">
@@ -1568,6 +1585,15 @@ function computeAutoTargetSelesai(startDate){
 // Status target per sub-tahap: 'ontrack' (hijau), 'warning' (kuning),
 // 'late' (merah), atau null (belum bisa dihitung — belum ada tanggal mulai).
 function getStageSLAStatus(item, stageKey){
+  // Entri retroaktif (pekerjaan sudah berjalan/selesai sebelum diinput ke
+  // sistem) — jejak waktu checklist TIDAK mencerminkan kapan benar-benar
+  // dikerjakan di dunia nyata. Daripada tampilkan warna yang menyesatkan,
+  // tampilkan status netral "Data Historis" saja. Cek dari data tersimpan
+  // (edit) ATAU checkbox live di form (lagi diisi, belum disimpan).
+  const isRetroactive = item ? !!item.isRetroactiveEntry
+    : !!(document.getElementById("fRetroactive") && document.getElementById("fRetroactive").checked);
+  if(isRetroactive) return "historis";
+
   const startDate = item ? item.startDate : document.getElementById("fStartDate").value;
   if(!startDate) return null;
   const targetDate = getStageTargetDate(startDate, stageKey);
@@ -1578,7 +1604,12 @@ function getStageSLAStatus(item, stageKey){
     const completedMs = tsMillis(completedAtRaw);
     if(!completedMs) return null; // selesai tapi tidak ada jejak waktu (data lama) — tidak bisa dinilai
     const targetMs = new Date(targetDate + "T23:59:59").getTime();
-    return completedMs <= targetMs ? "ontrack" : "late";
+    if(completedMs > targetMs) return "late";
+    // Selesai LEBIH CEPAT dari target — ini prestasi, bukan sekadar "pas".
+    // Beri status "Ahead" terpisah kalau marginnya cukup jauh (>= buffer
+    // hari), supaya benar-benar berarti "cepat", bukan cuma "kebetulan pas".
+    const daysAhead = Math.floor((targetMs - completedMs) / 86400000);
+    return daysAhead >= SLA_WARNING_BUFFER_DAYS ? "ahead" : "ontrack";
   } else {
     const todayMs = Date.now();
     const targetMs = new Date(targetDate + "T23:59:59").getTime();
@@ -1589,9 +1620,11 @@ function getStageSLAStatus(item, stageKey){
   }
 }
 const SLA_STATUS_DEF = {
-  ontrack: { label:"On Track", color:"var(--green)", bg:"var(--green-soft)" },
-  warning: { label:"Mendekati Batas", color:"var(--amber)", bg:"var(--amber-soft)" },
-  late:    { label:"Lewat Target", color:"var(--red)", bg:"var(--red-soft)" }
+  ahead:    { label:"Ahead", color:"#6B4FA0", bg:"#EFE9F7" },
+  ontrack:  { label:"On Track", color:"var(--green)", bg:"var(--green-soft)" },
+  warning:  { label:"Mendekati Batas", color:"var(--amber)", bg:"var(--amber-soft)" },
+  late:     { label:"Lewat Target", color:"var(--red)", bg:"var(--red-soft)" },
+  historis: { label:"Data Historis", color:"var(--ink-soft)", bg:"var(--status-gray-soft)" }
 };
 
 // ---------------------------------------------------------------------
@@ -1647,7 +1680,7 @@ const STAGE_DETAIL_FIELDS = {
     { key:"lingkupUtama", label:"Lingkup Utama", type:"text" }
   ],
   oe: [
-    { key:"polaPikir", label:"Pola Pikir OE", type:"select", options:["Last PO","Quotation Vendor"] },
+    { key:"polaPikir", label:"Pola Pikir OE", type:"select", options:["Last PO","Quotation Vendor","Hasil Analisa"] },
     { key:"nilaiOE", label:"Nilai OE", type:"currency" },
     { key:"note", label:"Note", type:"text" }
   ],
@@ -1757,6 +1790,18 @@ window.onTargetManualChange = function(){
   targetManuallySetFlag = true;
   const canEditTarget = ["admin", "manager", "senior_planner"].includes(currentRole);
   document.getElementById("targetRevisionReasonWrap").style.display = canEditTarget ? "block" : "none";
+};
+
+window.onRetroactiveChange = function(){
+  const checked = document.getElementById("fRetroactive").checked;
+  document.getElementById("retroactiveHint").style.display = checked ? "block" : "none";
+  refreshSLABadges();
+  // Re-terapkan aturan kunci field — Target Selesai jadi bisa diisi custom
+  // saat retroaktif aktif (lihat setFieldPermissions), tapi tetap hormati
+  // penguncian lain (viewer / planner yang bukan pemilik tetap terkunci).
+  const id = document.getElementById("itemId").value;
+  const item = id ? allItems.find(i => i.id === id) : null;
+  setFieldPermissions(!!id, item);
 };
 
 window.onPriorityChange = function(){
@@ -2328,6 +2373,20 @@ function isStuck(item){
   return age !== null && age >= STUCK_THRESHOLD_DAYS;
 }
 
+// Selesai LEBIH CEPAT dari Target Selesai keseluruhan — status "reward",
+// bukan sekadar "Selesai" biasa. Dikecualikan untuk entri retroaktif
+// (jejak waktunya tidak mencerminkan realita, tidak adil dinilai cepat/lambat).
+function isAheadOfSchedule(item){
+  if(item.isRetroactiveEntry) return false;
+  if(getTotalProgress(item) < 100) return false;
+  if(!item.targetSelesai) return false;
+  const completedMs = item.stageTimestamps ? tsMillis(item.stageTimestamps.kontrakPO) : 0;
+  if(!completedMs) return false; // tidak ada jejak waktu penyelesaian — tidak bisa dinilai
+  const targetMs = new Date(item.targetSelesai + "T23:59:59").getTime();
+  const daysAhead = Math.floor((targetMs - completedMs) / 86400000);
+  return daysAhead >= SLA_WARNING_BUFFER_DAYS;
+}
+
 function daysUntil(dateStr){
   const today = new Date(); today.setHours(0,0,0,0);
   const target = new Date(dateStr);
@@ -2859,6 +2918,9 @@ function buildChangeSummary(oldItem, newPayload){
   }
   if(newPayload.isPriority !== undefined && newPayload.isPriority !== null && !!newPayload.isPriority !== !!oldItem.isPriority){
     parts.push(newPayload.isPriority ? "⭐ Ditandai Prioritas" : "Tanda Prioritas dicabut");
+  }
+  if(!!newPayload.isRetroactiveEntry !== !!oldItem.isRetroactiveEntry){
+    parts.push(newPayload.isRetroactiveEntry ? "Ditandai sebagai entri retroaktif (data historis)" : "Tanda entri retroaktif dicabut");
   }
   return parts.length ? parts.join(" · ") : "Tidak ada perubahan terdeteksi";
 }
@@ -3592,12 +3654,17 @@ function renderWLA(items){
     const total = getTotalProgress(i);
     if(total >= 100) return; // WLA cuma soal beban AKTIF, yang selesai tidak dihitung
     const p = i.pic || "(Tidak diisi)";
-    if(!data[p]) data[p] = { activeCount:0, remainingSum:0, ages:[], stuckCount:0 };
+    if(!data[p]) data[p] = { activeCount:0, remainingSum:0, stuckAges:[] };
     data[p].activeCount++;
     data[p].remainingSum += (100 - total);
-    const age = getAgeDays(i);
-    if(age !== null) data[p].ages.push(age);
-    if(isStuck(i)) data[p].stuckCount++;
+    // PENTING: rata-rata & terlama HANYA dihitung dari tugas yang BENAR-BENAR
+    // stuck (>= ambang hari) — bukan dari semua tugas aktif. Kalau dicampur
+    // dengan tugas yang baru saja diupdate, rata-ratanya jadi "encer" dan bisa
+    // menyembunyikan satu kasus serius di antara banyak tugas yang sehat.
+    if(isStuck(i)){
+      const age = getAgeDays(i);
+      if(age !== null) data[p].stuckAges.push(age);
+    }
   });
 
   const keys = Object.keys(data).sort((a,b) => data[b].remainingSum - data[a].remainingSum);
@@ -3605,16 +3672,17 @@ function renderWLA(items){
 
   const rows = keys.map(p => {
     const d = data[p];
-    const avgAge = d.ages.length ? Math.round(d.ages.reduce((s,a)=>s+a,0) / d.ages.length) : 0;
-    const oldestAge = d.ages.length ? Math.max(...d.ages) : 0;
+    const stuckCount = d.stuckAges.length;
+    const avgAge = stuckCount ? Math.round(d.stuckAges.reduce((s,a)=>s+a,0) / stuckCount) : null;
+    const oldestAge = stuckCount ? Math.max(...d.stuckAges) : null;
     return `
       <tr style="cursor:pointer;border-bottom:1px solid #F0F0EE;" onclick='window.goFilterPlanner(${JSON.stringify(p)})'>
         <td style="padding:6px 8px;">${escapeHtml(p)}</td>
         <td style="padding:6px 8px;text-align:right;" class="mono">${d.activeCount}</td>
         <td style="padding:6px 8px;text-align:right;" class="mono">${d.remainingSum} poin</td>
-        <td style="padding:6px 8px;text-align:right;" class="mono">${avgAge} hari</td>
-        <td style="padding:6px 8px;text-align:right;" class="mono">${oldestAge} hari</td>
-        <td style="padding:6px 8px;text-align:right;${d.stuckCount>0?'color:var(--red);font-weight:600;':''}" class="mono">${d.stuckCount}</td>
+        <td style="padding:6px 8px;text-align:right;" class="mono">${avgAge !== null ? avgAge + " hari" : "—"}</td>
+        <td style="padding:6px 8px;text-align:right;" class="mono">${oldestAge !== null ? oldestAge + " hari" : "—"}</td>
+        <td style="padding:6px 8px;text-align:right;${stuckCount>0?'color:var(--red);font-weight:600;':''}" class="mono">${stuckCount}</td>
       </tr>
     `;
   }).join("");
@@ -3635,7 +3703,8 @@ function renderWLA(items){
     </table>
     <div class="hint" style="margin-top:8px;">
       "Sisa Beban" = total poin progress (dari 100 per tugas) yang belum diselesaikan di semua tugas aktif planner tsb.
-      "Tanpa Progress" = tugas aktif yang progress-nya tidak berubah sama sekali selama ${STUCK_THRESHOLD_DAYS} hari atau lebih. Klik baris untuk lihat semua tugas planner tsb.
+      "Tanpa Progress" = tugas aktif yang progress-nya tidak berubah sama sekali selama ${STUCK_THRESHOLD_DAYS} hari atau lebih.
+      Kolom "Rata-rata" dan "Terlama" HANYA menghitung dari tugas yang tanpa progress ini (bukan semua tugas aktif) — tanda "—" berarti tidak ada yang stuck. Klik baris untuk lihat semua tugas planner tsb.
     </div>
   `;
 }
@@ -4248,7 +4317,7 @@ window.renderTable = function(){
     return `
       <tr class="${overdue ? 'rowOverdue' : ''}">
         <td>
-          <div class="jobname">${item.isPriority ? `<span class="priorityFlagBadge">⭐ Prioritas</span> ` : ""}${escapeHtml(item.namaPekerjaan)}${relativeUpdateBadge(item)}${isStuck(item) ? `<span class="stuckBadge">${getAgeDays(item)} Hari Tanpa Progress</span>` : ""}${item.needsManagementSupport ? `<span class="mgmtFlagBadge">🚩 Need Support Management</span>` : ""}</div>
+          <div class="jobname">${item.isPriority ? `<span class="priorityFlagBadge">⭐ Prioritas</span> ` : ""}${escapeHtml(item.namaPekerjaan)}${relativeUpdateBadge(item)}${isStuck(item) ? `<span class="stuckBadge">${getAgeDays(item)} Hari Tanpa Progress</span>` : ""}${item.needsManagementSupport ? `<span class="mgmtFlagBadge">🚩 Need Support Management</span>` : ""}${isAheadOfSchedule(item) ? `<span class="aheadFlagBadge">Ahead of Schedule</span>` : ""}</div>
           ${item.progressNote ? `<div class="progNote">${escapeHtml(item.progressNote)}</div>` : ""}
         </td>
         <td>
@@ -4455,6 +4524,8 @@ window.openAddModal = function(){
   const todayISO = new Date().toISOString().slice(0, 10);
   document.getElementById("fStartDate").value = todayISO;
   document.getElementById("fTarget").value = computeAutoTargetSelesai(todayISO);
+  document.getElementById("fRetroactive").checked = false;
+  document.getElementById("retroactiveHint").style.display = "none";
   targetManuallySetFlag = false;
   document.getElementById("targetRevisionReasonWrap").style.display = "none";
   document.getElementById("fTargetRevisionReason").value = "";
@@ -4479,7 +4550,7 @@ window.openAddModal = function(){
   document.getElementById("btnDelete").style.display = "none";
   document.getElementById("btnPrintItem").style.display = "none";
   renderStageChecklist(null);
-  setFieldPermissions(false);
+  setFieldPermissions(false, null);
   document.getElementById("itemModal").classList.add("show");
 };
 
@@ -4523,6 +4594,8 @@ window.openEditModal = function(id){
   document.getElementById("fStartDate").value = item.startDate || "";
   document.getElementById("fTarget").value = item.targetSelesai || "";
   targetManuallySetFlag = !!item.targetManuallySet;
+  document.getElementById("fRetroactive").checked = !!item.isRetroactiveEntry;
+  document.getElementById("retroactiveHint").style.display = item.isRetroactiveEntry ? "block" : "none";
   document.getElementById("targetRevisionReasonWrap").style.display = "none";
   document.getElementById("fTargetRevisionReason").value = "";
   document.getElementById("fEffective").value = item.effectiveDate || "";
@@ -4567,21 +4640,26 @@ window.openEditModal = function(id){
     hint.textContent = "";
   }
 
-  document.getElementById("btnDelete").style.display = ["planner", "admin", "senior_planner"].includes(currentRole) ? "inline-flex" : "none";
-  document.getElementById("btnSaveItem").style.display = currentRole === "viewer" ? "none" : "inline-flex";
+  const isPlannerNotOwner = currentRole === "planner" && item.pic !== currentPicName;
+  document.getElementById("btnDelete").style.display = (["planner", "admin", "senior_planner"].includes(currentRole) && !isPlannerNotOwner) ? "inline-flex" : "none";
+  document.getElementById("btnSaveItem").style.display = (currentRole === "viewer" || isPlannerNotOwner) ? "none" : "inline-flex";
   document.getElementById("btnPrintItem").style.display = "inline-flex";
-  setFieldPermissions(true);
+  setFieldPermissions(true, item);
   document.getElementById("itemModal").classList.add("show");
 };
 
 // Manager: hanya field targetSelesai yang bisa diedit. Field lain read-only.
 // Planner & Admin: bebas edit semua field.
-function setFieldPermissions(isEdit){
+function setFieldPermissions(isEdit, item){
   const isViewer = currentRole === "viewer";
   const managerOnly = currentRole === "manager" && isEdit;
-  const readOnlyAll = isViewer || managerOnly;
+  // Planner yang buka pekerjaan MILIK ORANG LAIN: boleh lihat, tidak boleh
+  // edit apa pun — diperlakukan sama seperti Viewer untuk pekerjaan ini saja.
+  const isPlannerNotOwner = currentRole === "planner" && isEdit && item && item.pic !== currentPicName;
+  const readOnlyAll = isViewer || managerOnly || isPlannerNotOwner;
+  document.getElementById("readOnlyOwnerNotice").style.display = isPlannerNotOwner ? "block" : "none";
   const fields = ["fNama","fKategori","fKategoriLainnya","fContractType","fContractTypeLainnya","fDisiplin","fDisiplinLainnya",
-                  "fPic","fStartDate","fEffective","fProgressNote","fKet","fNeedsManagement","fManagementNote",
+                  "fPic","fStartDate","fRetroactive","fEffective","fProgressNote","fKet","fNeedsManagement","fManagementNote",
                   "fStatusHold","fStatusCancel","fHoldCancelNote"];
   fields.forEach(id => { document.getElementById(id).disabled = readOnlyAll; });
   document.querySelectorAll("#stageChecklist input[type=checkbox]").forEach(cb => { cb.disabled = readOnlyAll; });
@@ -4589,11 +4667,11 @@ function setFieldPermissions(isEdit){
   // contenteditable bukan <input>, tidak punya properti "disabled" — dikunci via attribute contenteditable.
   document.getElementById("fDasarPengadaan").contentEditable = readOnlyAll ? "false" : "true";
   // Target Selesai: SEKARANG otomatis dihitung sistem — HANYA
-  // admin/manager/senior_planner yang boleh revisi manual. Planner tidak
-  // bisa mengubah "ukuran" kinerjanya sendiri (sama prinsip dengan Priority).
-  const canEditTarget = ["admin", "manager", "senior_planner"].includes(currentRole);
-  document.getElementById("fTarget").disabled = !canEditTarget;
-  document.getElementById("fTargetRevisionReason").disabled = !canEditTarget;
+  // admin/manager/senior_planner yang boleh revisi manual (atau siapa pun
+  // saat mode Entri Retroaktif aktif, lihat window.onRetroactiveChange).
+  const canEditTarget = ["admin", "manager", "senior_planner"].includes(currentRole) || document.getElementById("fRetroactive").checked;
+  document.getElementById("fTarget").disabled = !canEditTarget || readOnlyAll;
+  document.getElementById("fTargetRevisionReason").disabled = !canEditTarget || readOnlyAll;
   document.getElementById("fPriority").disabled = isViewer;
   document.getElementById("fPriorityNote").disabled = isViewer;
 }
@@ -4606,6 +4684,14 @@ window.saveItem = async function(){
   const id = document.getElementById("itemId").value;
   const errEl = document.getElementById("modalErr");
   errEl.textContent = "";
+
+  if(currentRole === "planner" && id){
+    const existingCheck = allItems.find(i => i.id === id);
+    if(existingCheck && existingCheck.pic !== currentPicName){
+      errEl.textContent = "Anda hanya bisa mengedit pekerjaan Anda sendiri.";
+      return;
+    }
+  }
 
   const targetVal = document.getElementById("fTarget").value;
 
@@ -4662,7 +4748,7 @@ window.saveItem = async function(){
       return;
     }
 
-    const canEditTargetNow = ["admin", "manager", "senior_planner"].includes(currentRole);
+    const canEditTargetNow = ["admin", "manager", "senior_planner"].includes(currentRole) || document.getElementById("fRetroactive").checked;
     const originalItemForTarget = id ? allItems.find(i => i.id === id) : null;
     const originalTargetValue = originalItemForTarget ? (originalItemForTarget.targetSelesai || "") : "";
     // Bandingkan NILAI langsung (bukan cuma flag "field pernah disentuh") —
@@ -4727,6 +4813,7 @@ window.saveItem = async function(){
       disiplin: disiplin,
       pic: document.getElementById("fPic").value.trim(),
       startDate: document.getElementById("fStartDate").value,
+      isRetroactiveEntry: document.getElementById("fRetroactive").checked,
       targetSelesai: targetVal,
       effectiveDate: document.getElementById("fEffective").value,
       progressNote: document.getElementById("fProgressNote").value.trim(),
