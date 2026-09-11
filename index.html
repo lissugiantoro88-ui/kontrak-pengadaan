@@ -1584,47 +1584,54 @@ function computeAutoTargetSelesai(startDate){
 
 // Status target per sub-tahap: 'ontrack' (hijau), 'warning' (kuning),
 // 'late' (merah), atau null (belum bisa dihitung — belum ada tanggal mulai).
+// Mengembalikan {status, detail} atau null (belum bisa dinilai — belum ada
+// tanggal mulai / belum ada jejak waktu penyelesaian untuk data lama).
 function getStageSLAStatus(item, stageKey){
-  // Entri retroaktif (pekerjaan sudah berjalan/selesai sebelum diinput ke
-  // sistem) — jejak waktu checklist TIDAK mencerminkan kapan benar-benar
-  // dikerjakan di dunia nyata. Daripada tampilkan warna yang menyesatkan,
-  // tampilkan status netral "Data Historis" saja. Cek dari data tersimpan
-  // (edit) ATAU checkbox live di form (lagi diisi, belum disimpan).
-  const isRetroactive = item ? !!item.isRetroactiveEntry
-    : !!(document.getElementById("fRetroactive") && document.getElementById("fRetroactive").checked);
-  if(isRetroactive) return "historis";
-
   const startDate = item ? item.startDate : document.getElementById("fStartDate").value;
   if(!startDate) return null;
   const targetDate = getStageTargetDate(startDate, stageKey);
   const isChecked = item ? !!(item.stages && item.stages[stageKey]) : !!(document.getElementById(`stage_${stageKey}`) && document.getElementById(`stage_${stageKey}`).checked);
+  const targetMs = new Date(targetDate + "T23:59:59").getTime();
 
   if(isChecked){
+    // Entri retroaktif: HANYA tahap yang SUDAH DICENTANG (selesai di masa
+    // lalu, sebelum diinput ke sistem) yang dikecualikan — jejak waktunya
+    // tidak bisa dipercaya. Tahap yang BELUM dicentang (kerja yang masih
+    // berjalan/akan datang) tetap di-track normal di cabang else di bawah,
+    // terlepas dari status retroaktif keseluruhan pekerjaan.
+    const isRetroactive = item ? !!item.isRetroactiveEntry
+      : !!(document.getElementById("fRetroactive") && document.getElementById("fRetroactive").checked);
+    if(isRetroactive) return { status:"historis", detail:"" };
+
     const completedAtRaw = item && item.stageTimestamps ? item.stageTimestamps[stageKey] : null;
     const completedMs = tsMillis(completedAtRaw);
     if(!completedMs) return null; // selesai tapi tidak ada jejak waktu (data lama) — tidak bisa dinilai
-    const targetMs = new Date(targetDate + "T23:59:59").getTime();
-    if(completedMs > targetMs) return "late";
+
+    if(completedMs > targetMs){
+      const daysLate = Math.ceil((completedMs - targetMs) / 86400000);
+      return { status:"late", detail:`${daysLate}d late` };
+    }
     // Selesai LEBIH CEPAT dari target — ini prestasi, bukan sekadar "pas".
     // Beri status "Ahead" terpisah kalau marginnya cukup jauh (>= buffer
     // hari), supaya benar-benar berarti "cepat", bukan cuma "kebetulan pas".
-    const daysAhead = Math.floor((targetMs - completedMs) / 86400000);
-    return daysAhead >= SLA_WARNING_BUFFER_DAYS ? "ahead" : "ontrack";
+    const daysEarly = Math.floor((targetMs - completedMs) / 86400000);
+    if(daysEarly >= SLA_WARNING_BUFFER_DAYS) return { status:"ahead", detail:`${daysEarly}d early` };
+    return { status:"ontrack", detail: daysEarly > 0 ? `${daysEarly}d early` : "On time" };
   } else {
     const todayMs = Date.now();
-    const targetMs = new Date(targetDate + "T23:59:59").getTime();
     const daysLeft = Math.ceil((targetMs - todayMs) / 86400000);
-    if(daysLeft < 0) return "late";
-    if(daysLeft <= SLA_WARNING_BUFFER_DAYS) return "warning";
-    return "ontrack";
+    if(daysLeft < 0) return { status:"late", detail:`${Math.abs(daysLeft)}d overdue` };
+    if(daysLeft === 0) return { status:"warning", detail:"Due today" };
+    if(daysLeft <= SLA_WARNING_BUFFER_DAYS) return { status:"warning", detail:`${daysLeft}d left` };
+    return { status:"ontrack", detail:`${daysLeft}d left` };
   }
 }
 const SLA_STATUS_DEF = {
   ahead:    { label:"Ahead", color:"#6B4FA0", bg:"#EFE9F7" },
   ontrack:  { label:"On Track", color:"var(--green)", bg:"var(--green-soft)" },
-  warning:  { label:"Mendekati Batas", color:"var(--amber)", bg:"var(--amber-soft)" },
-  late:     { label:"Lewat Target", color:"var(--red)", bg:"var(--red-soft)" },
-  historis: { label:"Data Historis", color:"var(--ink-soft)", bg:"var(--status-gray-soft)" }
+  warning:  { label:"Due Soon", color:"var(--amber)", bg:"var(--amber-soft)" },
+  late:     { label:"Overdue", color:"var(--red)", bg:"var(--red-soft)" },
+  historis: { label:"Historical", color:"var(--ink-soft)", bg:"var(--status-gray-soft)" }
 };
 
 // ---------------------------------------------------------------------
@@ -1846,9 +1853,9 @@ function renderStageChecklist(item){
     html += `<div class="stageGroup"><div class="stageGroupTitle">${group}</div>`;
     STAGE_TEMPLATE.filter(s => s.group === group).forEach(s => {
       const checked = stages[s.key] ? "checked" : "";
-      const slaStatus = getStageSLAStatus(item, s.key);
-      const slaBadge = slaStatus
-        ? `<span class="slaBadge" id="slaBadge_${s.key}" style="background:${SLA_STATUS_DEF[slaStatus].bg};color:${SLA_STATUS_DEF[slaStatus].color};">${SLA_STATUS_DEF[slaStatus].label}</span>`
+      const sla = getStageSLAStatus(item, s.key);
+      const slaBadge = sla
+        ? `<span class="slaBadge" id="slaBadge_${s.key}" style="background:${SLA_STATUS_DEF[sla.status].bg};color:${SLA_STATUS_DEF[sla.status].color};">${SLA_STATUS_DEF[sla.status].label}${sla.detail ? ` · ${sla.detail}` : ""}</span>`
         : `<span class="slaBadge slaBadgeEmpty" id="slaBadge_${s.key}"></span>`;
       html += `
         <div class="stageRow" data-key="${s.key}">
@@ -1955,12 +1962,12 @@ function refreshSLABadges(){
   STAGE_TEMPLATE.forEach(s => {
     const badge = document.getElementById(`slaBadge_${s.key}`);
     if(!badge) return;
-    const status = getStageSLAStatus(null, s.key);
-    if(status){
+    const sla = getStageSLAStatus(null, s.key);
+    if(sla){
       badge.className = "slaBadge";
-      badge.style.background = SLA_STATUS_DEF[status].bg;
-      badge.style.color = SLA_STATUS_DEF[status].color;
-      badge.textContent = SLA_STATUS_DEF[status].label;
+      badge.style.background = SLA_STATUS_DEF[sla.status].bg;
+      badge.style.color = SLA_STATUS_DEF[sla.status].color;
+      badge.textContent = SLA_STATUS_DEF[sla.status].label + (sla.detail ? ` · ${sla.detail}` : "");
     } else {
       badge.className = "slaBadge slaBadgeEmpty";
       badge.style.background = "";
@@ -4549,6 +4556,8 @@ window.openAddModal = function(){
   document.getElementById("targetEditHint").textContent = "";
   document.getElementById("btnDelete").style.display = "none";
   document.getElementById("btnPrintItem").style.display = "none";
+  document.getElementById("btnSaveItem").style.display = "inline-flex";
+  document.getElementById("readOnlyOwnerNotice").style.display = "none";
   renderStageChecklist(null);
   setFieldPermissions(false, null);
   document.getElementById("itemModal").classList.add("show");
