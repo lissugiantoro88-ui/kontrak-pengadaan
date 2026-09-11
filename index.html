@@ -1585,7 +1585,8 @@ function computeAutoTargetSelesai(startDate){
 // Status target per sub-tahap: 'ontrack' (hijau), 'warning' (kuning),
 // 'late' (merah), atau null (belum bisa dihitung — belum ada tanggal mulai).
 // Mengembalikan {status, detail} atau null (belum bisa dinilai — belum ada
-// tanggal mulai / belum ada jejak waktu penyelesaian untuk data lama).
+// tanggal mulai, ATAU untuk entri retroaktif yang tahapnya sudah dicentang
+// tapi tanggal selesai aktualnya belum diisi manual).
 function getStageSLAStatus(item, stageKey){
   const startDate = item ? item.startDate : document.getElementById("fStartDate").value;
   if(!startDate) return null;
@@ -1594,18 +1595,25 @@ function getStageSLAStatus(item, stageKey){
   const targetMs = new Date(targetDate + "T23:59:59").getTime();
 
   if(isChecked){
-    // Entri retroaktif: HANYA tahap yang SUDAH DICENTANG (selesai di masa
-    // lalu, sebelum diinput ke sistem) yang dikecualikan — jejak waktunya
-    // tidak bisa dipercaya. Tahap yang BELUM dicentang (kerja yang masih
-    // berjalan/akan datang) tetap di-track normal di cabang else di bawah,
-    // terlepas dari status retroaktif keseluruhan pekerjaan.
+    // Entri retroaktif: tahap yang SUDAH DICENTANG dianggap "Historical" —
+    // tidak minta tanggal manual (kebanyakan planner tidak ingat persis
+    // tanggalnya, dan itu bukan info penting untuk dikejar). Tahap yang
+    // BELUM dicentang tetap kena cabang else di bawah — di-track NORMAL,
+    // sama seperti pekerjaan non-retroaktif, karena itu kerja yang sedang/
+    // akan berjalan dan memang bisa dinilai wajar.
     const isRetroactive = item ? !!item.isRetroactiveEntry
       : !!(document.getElementById("fRetroactive") && document.getElementById("fRetroactive").checked);
     if(isRetroactive) return { status:"historis", detail:"" };
 
-    const completedAtRaw = item && item.stageTimestamps ? item.stageTimestamps[stageKey] : null;
-    const completedMs = tsMillis(completedAtRaw);
-    if(!completedMs) return null; // selesai tapi tidak ada jejak waktu (data lama) — tidak bisa dinilai
+    // Non-retroaktif: kalau baru saja diklik (belum disimpan), pakai waktu
+    // SEKARANG (jam komputer user) sebagai perkiraan — badge langsung
+    // berubah seketika, tidak perlu Simpan dulu baru tahu hasilnya. Nilai
+    // yang akhirnya tersimpan tetap pakai jam server, bedanya cuma
+    // hitungan detik — tidak berpengaruh untuk perhitungan per-hari.
+    const completedMs = item
+      ? tsMillis(item.stageTimestamps ? item.stageTimestamps[stageKey] : null)
+      : Date.now();
+    if(!completedMs) return null; // data lama tanpa jejak waktu — tidak bisa dinilai
 
     if(completedMs > targetMs){
       const daysLate = Math.ceil((completedMs - targetMs) / 86400000);
@@ -1629,9 +1637,9 @@ function getStageSLAStatus(item, stageKey){
 const SLA_STATUS_DEF = {
   ahead:    { label:"Ahead", color:"#6B4FA0", bg:"#EFE9F7" },
   ontrack:  { label:"On Track", color:"var(--green)", bg:"var(--green-soft)" },
+  historis: { label:"Historical", color:"var(--ink-soft)", bg:"var(--status-gray-soft)" },
   warning:  { label:"Due Soon", color:"var(--amber)", bg:"var(--amber-soft)" },
-  late:     { label:"Overdue", color:"var(--red)", bg:"var(--red-soft)" },
-  historis: { label:"Historical", color:"var(--ink-soft)", bg:"var(--status-gray-soft)" }
+  late:     { label:"Overdue", color:"var(--red)", bg:"var(--red-soft)" }
 };
 
 // ---------------------------------------------------------------------
@@ -2289,6 +2297,13 @@ onAuthStateChanged(auth, async (user) => {
 // ---------------------------------------------------------------------
 function tsMillis(ts){
   if(!ts) return 0;
+  if(typeof ts === "string"){
+    // Tanggal manual (entri retroaktif) — disimpan sebagai string "YYYY-MM-DD",
+    // bukan Firestore Timestamp. Anggap akhir hari itu (23:59:59) supaya
+    // konsisten dengan cara target dihitung (lihat getStageSLAStatus).
+    const ms = new Date(ts + "T23:59:59").getTime();
+    return isNaN(ms) ? 0 : ms;
+  }
   if(typeof ts.seconds === "number") return ts.seconds * 1000 + (ts.nanoseconds || 0) / 1e6;
   if(typeof ts.toMillis === "function") return ts.toMillis();
   return 0;
@@ -4784,6 +4799,9 @@ window.saveItem = async function(){
     // Jejak waktu PER SUB-TAHAP — dasar hitung status Target per Tahap.
     // Hanya distempel PERSIS saat transisi belum-centang -> centang (bukan
     // tiap kali disimpan). Kalau dilepas centangnya, jejak waktu dihapus.
+    // Retroaktif atau tidak, stempelnya sama — bedanya cuma di getStageSLAStatus:
+    // untuk retroaktif, tahap yang sudah dicentang ditampilkan "Historical"
+    // (tidak dinilai), bukan dari nilai stempel waktunya.
     const oldStageTimestamps = existingItem ? (existingItem.stageTimestamps || {}) : {};
     const newStageTimestamps = { ...oldStageTimestamps };
     let stageTimestampsChanged = false;
