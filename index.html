@@ -1595,18 +1595,23 @@ function getStageSLAStatus(item, stageKey){
   const targetMs = new Date(targetDate + "T23:59:59").getTime();
 
   if(isChecked){
-    // Entri retroaktif: tahap yang SUDAH DICENTANG dianggap "Historical" —
-    // tidak minta tanggal manual (kebanyakan planner tidak ingat persis
-    // tanggalnya, dan itu bukan info penting untuk dikejar). Tahap yang
-    // BELUM dicentang tetap kena cabang else di bawah — di-track NORMAL,
-    // sama seperti pekerjaan non-retroaktif, karena itu kerja yang sedang/
-    // akan berjalan dan memang bisa dinilai wajar.
-    const isRetroactive = item ? !!item.isRetroactiveEntry
-      : !!(document.getElementById("fRetroactive") && document.getElementById("fRetroactive").checked);
-    if(isRetroactive) return { status:"historis", detail:"" };
+    // Historis per-tahap: DIKUNCI PERMANEN persis di penyimpanan PERTAMA
+    // kali pekerjaan ini dibuat (lihat saveItem) — bukan dibaca ulang dari
+    // checkbox "Entri Retroaktif" tiap kali form dibuka. Ini SENGAJA supaya
+    // tahap yang baru dicentang di sesi edit BERIKUTNYA otomatis dianggap
+    // kerja LIVE (real-time) — walau checkbox Retroaktif keseluruhan
+    // pekerjaan masih tercentang untuk keperluan lain.
+    const isHistorical = item
+      ? !!(item.historicalStages && item.historicalStages[stageKey])
+      : (!document.getElementById("itemId").value && document.getElementById("fRetroactive").checked);
+      // ^ live preview HANYA berlaku historis kalau pekerjaan ini BELUM
+      // PERNAH tersimpan sama sekali (itemId kosong) — mencerminkan apa
+      // yang akan benar-benar tersimpan begitu ditekan Simpan pertama kali.
+    if(isHistorical) return { status:"historis", detail:"" };
 
-    // Non-retroaktif: kalau baru saja diklik (belum disimpan), pakai waktu
-    // SEKARANG (jam komputer user) sebagai perkiraan — badge langsung
+    // Non-retroaktif ATAU tahap yang baru dicentang di sesi setelah
+    // penyimpanan pertama: kalau baru saja diklik (belum disimpan), pakai
+    // waktu SEKARANG (jam komputer user) sebagai perkiraan — badge langsung
     // berubah seketika, tidak perlu Simpan dulu baru tahu hasilnya. Nilai
     // yang akhirnya tersimpan tetap pakai jam server, bedanya cuma
     // hitungan detik — tidak berpengaruh untuk perhitungan per-hari.
@@ -4796,12 +4801,21 @@ window.saveItem = async function(){
     const oldStages = existingItem ? existingItem.stages : null;
     const stagesChanged = !oldStages || STAGE_TEMPLATE.some(s => !!oldStages[s.key] !== !!newStages[s.key]);
 
+    // historicalStages: dikunci PERMANEN persis di PENYIMPANAN PERTAMA KALI
+    // (id masih kosong = pekerjaan baru). Tahap yang tercentang saat itu,
+    // kalau "Entri Retroaktif" aktif, ditandai historis SELAMANYA — tidak
+    // ditulis ulang lagi di sesi edit berikutnya, walau checkbox Retroaktif
+    // masih tercentang. Ini yang membuat tahap BARU yang dicentang di sesi
+    // edit setelahnya otomatis dianggap kerja LIVE (real-time), bukan histori.
+    let historicalStagesPayload = null;
+    if(!id && document.getElementById("fRetroactive").checked){
+      historicalStagesPayload = {};
+      STAGE_TEMPLATE.forEach(s => { if(newStages[s.key]) historicalStagesPayload[s.key] = true; });
+    }
+
     // Jejak waktu PER SUB-TAHAP — dasar hitung status Target per Tahap.
     // Hanya distempel PERSIS saat transisi belum-centang -> centang (bukan
     // tiap kali disimpan). Kalau dilepas centangnya, jejak waktu dihapus.
-    // Retroaktif atau tidak, stempelnya sama — bedanya cuma di getStageSLAStatus:
-    // untuk retroaktif, tahap yang sudah dicentang ditampilkan "Historical"
-    // (tidak dinilai), bukan dari nilai stempel waktunya.
     const oldStageTimestamps = existingItem ? (existingItem.stageTimestamps || {}) : {};
     const newStageTimestamps = { ...oldStageTimestamps };
     let stageTimestampsChanged = false;
@@ -4880,6 +4894,7 @@ window.saveItem = async function(){
     // hanya menyentuh field yang ada di payload).
     if(stagesChanged) payload.progressUpdatedAt = serverTimestamp();
     if(stageTimestampsChanged) payload.stageTimestamps = newStageTimestamps;
+    if(historicalStagesPayload) payload.historicalStages = historicalStagesPayload;
 
     // Target Selesai: kalau NILAI-nya benar-benar berubah dibanding
     // sebelumnya (targetChangedThisSave — bukan cuma "field pernah
