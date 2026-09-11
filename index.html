@@ -1312,7 +1312,7 @@
   <div class="modalBox" style="position:relative;">
     <button class="modalCloseX" onclick="window.closeModal()" title="Tutup" aria-label="Tutup">&times;</button>
     <h2 id="modalTitle">Tambah Pekerjaan</h2>
-    <div class="hint" id="readOnlyOwnerNotice" style="display:none;background:#F0F0EE;padding:8px 12px;border-radius:6px;margin-bottom:14px;">👁️ Anda hanya bisa melihat pekerjaan ini — bukan pekerjaan Anda, jadi tidak bisa diedit.</div>
+    <div class="hint" id="readOnlyOwnerNotice" style="display:none;background:#F0F0EE;padding:8px 12px;border-radius:6px;margin-bottom:14px;">View only — not your assignment.</div>
     <input type="hidden" id="itemId">
 
     <div class="field">
@@ -1601,12 +1601,26 @@ function getStageSLAStatus(item, stageKey){
     // tahap yang baru dicentang di sesi edit BERIKUTNYA otomatis dianggap
     // kerja LIVE (real-time) — walau checkbox Retroaktif keseluruhan
     // pekerjaan masih tercentang untuk keperluan lain.
-    const isHistorical = item
-      ? !!(item.historicalStages && item.historicalStages[stageKey])
-      : (!document.getElementById("itemId").value && document.getElementById("fRetroactive").checked);
-      // ^ live preview HANYA berlaku historis kalau pekerjaan ini BELUM
-      // PERNAH tersimpan sama sekali (itemId kosong) — mencerminkan apa
-      // yang akan benar-benar tersimpan begitu ditekan Simpan pertama kali.
+    let isHistorical;
+    if(item){
+      isHistorical = !!(item.historicalStages && item.historicalStages[stageKey]);
+    } else {
+      // Mode live (dipanggil dari refreshSLABadges, termasuk yang otomatis
+      // jalan tiap kali renderStageChecklist selesai render). PENTING: kalau
+      // pekerjaan ini SUDAH PERNAH tersimpan (itemId terisi), historisnya
+      // HARUS ikut apa yang sudah tercatat permanen di allItems — BUKAN
+      // ditebak ulang dari checkbox Retroaktif — supaya refresh live tidak
+      // menimpa status historis yang sudah benar dari render awal.
+      const idNow = document.getElementById("itemId").value;
+      if(idNow){
+        const existingNow = allItems.find(i => i.id === idNow);
+        isHistorical = !!(existingNow && existingNow.historicalStages && existingNow.historicalStages[stageKey]);
+      } else {
+        // Pekerjaan BARU, belum pernah tersimpan sama sekali — preview
+        // sesuai apa yang AKAN tersimpan begitu ditekan Simpan pertama kali.
+        isHistorical = !!(document.getElementById("fRetroactive") && document.getElementById("fRetroactive").checked);
+      }
+    }
     if(isHistorical) return { status:"historis", detail:"" };
 
     // Non-retroaktif ATAU tahap yang baru dicentang di sesi setelah
