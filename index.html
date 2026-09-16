@@ -4228,7 +4228,8 @@ function getFilteredItems(){
     items = items.filter(i => {
       const haystack = [
         i.namaPekerjaan, i.pic, i.kategori, i.contractType, i.disiplin,
-        i.progressNote, i.keterangan, stripHtmlForSearch(i.dasarPengadaan), i.managementSupportNote
+        i.progressNote, i.keterangan, stripHtmlForSearch(i.dasarPengadaan), i.managementSupportNote,
+        i.sumberKebutuhan
       ].filter(Boolean).join(" ").toLowerCase();
       return haystack.includes(fSearch);
     });
