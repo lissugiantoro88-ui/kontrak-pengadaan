@@ -1005,18 +1005,22 @@
         <table>
           <thead>
             <tr>
+              <th style="width:36px;text-align:center;">No</th>
               <th class="sortable" onclick="window.setPORefSort('tanggalPO')">Tanggal PO</th>
               <th class="sortable" onclick="window.setPORefSort('nomorPO')">Nomor PO</th>
               <th class="sortable" onclick="window.setPORefSort('nama')">Nama Pekerjaan</th>
               <th>Kategori</th>
               <th>Disiplin</th>
-              <th class="sortable" onclick="window.setPORefSort('vendor')">Vendor Pemenang</th>
               <th>Jenis Kontrak</th>
-              <th class="sortable" onclick="window.setPORefSort('nilaiSort')">Nilai PO</th>
+              <th class="sortable" onclick="window.setPORefSort('vendor')">Vendor Pemenang</th>
+              <th title="DT untuk Material, Day One untuk Jasa">DT / Day One</th>
+              <th title="Tanggal Onsite untuk Material, Durasi untuk Jasa">Onsite / Durasi</th>
+              <th class="sortable" onclick="window.setPORefSort('nilaiSort')" style="text-align:right;">Nilai PO</th>
               <th>Planner</th>
             </tr>
           </thead>
           <tbody id="poRefTableBody"></tbody>
+          <tfoot id="poRefTableFoot" style="display:none;"></tfoot>
         </table>
         <div class="emptyState" id="poRefEmptyState" style="display:none;">
           <div class="big">—</div>
@@ -1749,7 +1753,11 @@ const STAGE_DETAIL_FIELDS = {
   kontrakPO: [
     { key:"nomorPO", label:"Nomor PO", type:"text" },
     { key:"tanggalPO", label:"Tanggal PO", type:"date" },
-    { key:"nilaiPO", label:"Nilai PO", type:"currency" }
+    { key:"nilaiPO", label:"Nilai PO", type:"currency" },
+    { key:"dt", label:"DT", type:"text", placeholder:"mis. 45 hari kerja", showIf:"Material" },
+    { key:"tanggalOnsite", label:"Tanggal Onsite", type:"date", showIf:"Material" },
+    { key:"dayOne", label:"Day One", type:"date", showIf:"Jasa" },
+    { key:"durasiPekerjaan", label:"Durasi Pekerjaan", type:"text", placeholder:"mis. 30 hari kalender", showIf:"Jasa" }
   ]
 };
 
@@ -1802,6 +1810,13 @@ window.onKategoriChange = function(){
 window.onContractTypeChange = function(){
   const v = document.getElementById("fContractType").value;
   document.getElementById("contractTypeLainnyaWrap").style.display = v === "Lainnya" ? "block" : "none";
+  // Field kondisional di checklist Kontrak/PO (DT/Tanggal Onsite khusus
+  // Material, Day One/Durasi Pekerjaan khusus Jasa) — toggle live tanpa
+  // render ulang seluruh checklist (supaya isian tahap lain tidak hilang).
+  document.querySelectorAll('[id^="stageDetailFieldWrap_"]').forEach(el => {
+    const showIf = el.dataset.showif;
+    if(showIf) el.style.display = (showIf === v) ? "block" : "none";
+  });
 };
 window.onDisiplinChange = function(){
   const v = document.getElementById("fDisiplin").value;
@@ -1875,6 +1890,9 @@ function renderStageChecklist(item){
   const container = document.getElementById("stageChecklist");
   const stages = (item && item.stages) || {};
   const details = (item && item.stageDetails) || {};
+  // Untuk field detail yang kondisional (mis. DT/Onsite khusus Material,
+  // Day One/Durasi khusus Jasa) — ambil Jenis Kontrak saat ini.
+  const currentContractType = item ? item.contractType : document.getElementById("fContractType").value;
   let html = "";
   STAGE_GROUPS.forEach(group => {
     html += `<div class="stageGroup"><div class="stageGroupTitle">${group}</div>`;
@@ -1899,6 +1917,9 @@ function renderStageChecklist(item){
         html += `<div class="stageDetailPanel" id="stageDetail_${s.key}" style="display:${showPanel};">`;
         detailFields.forEach(f => {
           const val = detailVals[f.key] || "";
+          const wrapId = `stageDetailFieldWrap_${s.key}_${f.key}`;
+          const wrapDisplay = f.showIf && f.showIf !== currentContractType ? "none" : "block";
+          html += `<div id="${wrapId}" data-showif="${f.showIf || ""}" style="display:${wrapDisplay};">`;
           if(f.type === "textarea"){
             html += `
               <div class="stageDetailField">
@@ -1932,9 +1953,10 @@ function renderStageChecklist(item){
             html += `
               <div class="stageDetailField">
                 <label>${f.label}</label>
-                <input type="${f.type}" id="stageDetail_${s.key}_${f.key}" value="${escapeHtml(val)}">
+                <input type="${f.type}" id="stageDetail_${s.key}_${f.key}" value="${escapeHtml(val)}" placeholder="${f.placeholder || ""}">
               </div>`;
           }
+          html += `</div>`;
         });
         html += `</div>`;
       }
@@ -2708,6 +2730,9 @@ function getPORefRows(){
       const kontrakDetail = (i.stageDetails && i.stageDetails.kontrakPO) || {};
       const pemenangDetail = (i.stageDetails && i.stageDetails.penetapanPemenang) || {};
       const nilaiRaw = kontrakDetail.nilaiPO || "";
+      const nilaiIsObj = nilaiRaw && typeof nilaiRaw === "object";
+      const isMaterial = i.contractType === "Material";
+      const isJasa = i.contractType === "Jasa";
       return {
         id: i.id,
         nama: i.namaPekerjaan || "",
@@ -2719,7 +2744,14 @@ function getPORefRows(){
         nomorPO: kontrakDetail.nomorPO || "",
         tanggalPO: kontrakDetail.tanggalPO || "",
         nilai: fmtCurrencyValue(nilaiRaw), // untuk tampilan (sudah ada keterangan mata uang)
-        nilaiSort: (nilaiRaw && typeof nilaiRaw === "object") ? Number(nilaiRaw.amount) || 0 : 0 // untuk sort numerik murni
+        nilaiSort: nilaiIsObj ? Number(nilaiRaw.amount) || 0 : 0, // untuk sort numerik murni
+        nilaiCurrency: nilaiIsObj ? (nilaiRaw.currency || "IDR") : null, // untuk total per mata uang
+        nilaiAmount: nilaiIsObj ? Number(nilaiRaw.amount) || 0 : 0,
+        // Kolom gabungan: DT (Material) / Day One (Jasa) — beda makna
+        // tergantung Jenis Kontrak, ditampilkan di satu kolom karena
+        // saling eksklusif (tidak pernah dua-duanya terisi bersamaan).
+        col1: isMaterial ? (kontrakDetail.dt || "") : (isJasa ? fmtDate(kontrakDetail.dayOne) : ""),
+        col2: isMaterial ? fmtDate(kontrakDetail.tanggalOnsite) : (isJasa ? (kontrakDetail.durasiPekerjaan || "") : "")
       };
     });
 }
@@ -2770,10 +2802,13 @@ window.renderPORefTable = function(){
     return poRefSortDir === "asc" ? cmp : -cmp;
   });
 
+  const tfoot = document.getElementById("poRefTableFoot");
+
   if(rows.length === 0){
     tbody.innerHTML = "";
     emptyState.style.display = "block";
     paginationBar.style.display = "none";
+    tfoot.style.display = "none";
     return;
   }
   emptyState.style.display = "none";
@@ -2791,42 +2826,79 @@ window.renderPORefTable = function(){
   document.getElementById("poRefBtnPrev").disabled = poRefCurrentPage <= 1;
   document.getElementById("poRefBtnNext").disabled = poRefCurrentPage >= totalPages;
 
-  tbody.innerHTML = pageRows.map(r => `
+  tbody.innerHTML = pageRows.map((r, idx) => `
     <tr style="cursor:pointer;" onclick='window.switchView("list");window.openEditModal(${JSON.stringify(r.id)})'>
+      <td class="mono" style="text-align:center;color:var(--ink-soft);">${startIdx + idx + 1}</td>
       <td class="mono">${fmtDate(r.tanggalPO)}</td>
       <td class="mono">${escapeHtml(r.nomorPO || "—")}</td>
       <td>${escapeHtml(r.nama)}</td>
-      <td>${escapeHtml(r.kategori || "—")}</td>
+      <td>${r.kategori ? `<span class="pill ${KATEGORI_PILL_CLASS[r.kategori] || "pill-lainnya"}">${escapeHtml(r.kategori)}</span>` : "—"}</td>
       <td>${escapeHtml(r.disiplin || "—")}</td>
-      <td>${escapeHtml(r.vendor || "—")}</td>
       <td>${escapeHtml(r.contractType || "—")}</td>
-      <td class="mono">${escapeHtml(r.nilai || "—")}</td>
+      <td>${escapeHtml(r.vendor || "—")}</td>
+      <td class="mono">${escapeHtml(r.col1 || "—")}</td>
+      <td class="mono">${escapeHtml(r.col2 || "—")}</td>
+      <td class="mono" style="text-align:right;font-weight:600;">${escapeHtml(r.nilai || "—")}</td>
       <td>${escapeHtml(r.planner || "—")}</td>
     </tr>
   `).join("");
+
+  // Baris ringkasan total — dipisah per mata uang (IDR/USD tidak bisa
+  // dijumlah jadi satu angka), dihitung dari SELURUH hasil filter
+  // (bukan cuma halaman yang sedang tampil), supaya benar-benar representatif.
+  const totalsByCurrency = {};
+  rows.forEach(r => {
+    if(r.nilaiCurrency){
+      totalsByCurrency[r.nilaiCurrency] = (totalsByCurrency[r.nilaiCurrency] || 0) + r.nilaiAmount;
+    }
+  });
+  const totalsText = Object.keys(totalsByCurrency).length
+    ? Object.entries(totalsByCurrency).map(([cur, amt]) => `${cur} ${amt.toLocaleString('id-ID')}`).join(" · ")
+    : "—";
+  tfoot.style.display = "table-footer-group";
+  tfoot.innerHTML = `
+    <tr style="font-weight:600;border-top:2px solid var(--line);background:#FAFBFC;">
+      <td colspan="10" style="text-align:right;padding:8px 8px;">Total (${rows.length} PO)</td>
+      <td class="mono" style="text-align:right;padding:8px 8px;">${totalsText}</td>
+      <td></td>
+    </tr>
+  `;
 };
 
 window.exportPORefPdf = function(){
   const rows = getPORefRows();
   if(rows.length === 0){ alert("Belum ada data PO untuk diekspor."); return; }
 
-  const rowsHtml = rows.map(r => `
+  const rowsHtml = rows.map((r, idx) => `
     <tr>
+      <td style="text-align:center;">${idx + 1}</td>
       <td>${fmtDate(r.tanggalPO)}</td>
       <td>${escapeHtml(r.nomorPO || "—")}</td>
       <td>${escapeHtml(r.nama)}</td>
       <td>${escapeHtml(r.kategori || "—")}</td>
       <td>${escapeHtml(r.disiplin || "—")}</td>
-      <td>${escapeHtml(r.vendor || "—")}</td>
       <td>${escapeHtml(r.contractType || "—")}</td>
-      <td>${escapeHtml(r.nilai || "—")}</td>
+      <td>${escapeHtml(r.vendor || "—")}</td>
+      <td>${escapeHtml(r.col1 || "—")}</td>
+      <td>${escapeHtml(r.col2 || "—")}</td>
+      <td style="text-align:right;font-weight:700;">${escapeHtml(r.nilai || "—")}</td>
       <td>${escapeHtml(r.planner || "—")}</td>
     </tr>
   `).join("");
 
+  const totalsByCurrency = {};
+  rows.forEach(r => {
+    if(r.nilaiCurrency){
+      totalsByCurrency[r.nilaiCurrency] = (totalsByCurrency[r.nilaiCurrency] || 0) + r.nilaiAmount;
+    }
+  });
+  const totalsText = Object.keys(totalsByCurrency).length
+    ? Object.entries(totalsByCurrency).map(([cur, amt]) => `${cur} ${amt.toLocaleString('id-ID')}`).join(" · ")
+    : "—";
+
   const now = new Date();
   const generatedAt = now.toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' });
-  const fileTitle = `Referensi-PO_${now.toISOString().slice(0,10)}`;
+  const fileTitle = `Summary-PO_${now.toISOString().slice(0,10)}`;
 
   const reportHtml = `
 <!DOCTYPE html>
@@ -2846,6 +2918,7 @@ window.exportPORefPdf = function(){
   table{ width:100%; border-collapse:collapse; }
   th, td{ border:1px solid #ccc; padding:5px 7px; text-align:left; font-size:10px; }
   th{ background:#F0F0EE; font-weight:700; }
+  tfoot td{ font-weight:700; background:#FAFBFC; border-top:2px solid #1C2530; }
 </style>
 </head>
 <body>
@@ -2858,11 +2931,18 @@ window.exportPORefPdf = function(){
   <table>
     <thead>
       <tr>
-        <th>Tanggal PO</th><th>Nomor PO</th><th>Nama Pekerjaan</th><th>Kategori</th>
-        <th>Disiplin</th><th>Vendor Pemenang</th><th>Jenis Kontrak</th><th>Nilai PO</th><th>Planner</th>
+        <th style="width:24px;text-align:center;">No</th><th>Tanggal PO</th><th>Nomor PO</th><th>Nama Pekerjaan</th><th>Kategori</th>
+        <th>Disiplin</th><th>Jenis Kontrak</th><th>Vendor Pemenang</th><th>DT / Day One</th><th>Onsite / Durasi</th><th style="text-align:right;">Nilai PO</th><th>Planner</th>
       </tr>
     </thead>
     <tbody>${rowsHtml}</tbody>
+    <tfoot>
+      <tr>
+        <td colspan="10" style="text-align:right;">Total (${rows.length} PO)</td>
+        <td style="text-align:right;">${totalsText}</td>
+        <td></td>
+      </tr>
+    </tfoot>
   </table>
 </body>
 </html>
