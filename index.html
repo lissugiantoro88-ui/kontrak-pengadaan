@@ -502,6 +502,13 @@
     font-size:11px;text-transform:uppercase;letter-spacing:.05em;
     color:var(--ink-soft);margin-bottom:6px;font-weight:600;
   }
+  .formSection{margin-bottom:20px;}
+  .formSectionTitle{
+    font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;
+    color:var(--accent);font-weight:700;
+    padding-bottom:6px;margin-bottom:14px;
+    border-bottom:1px solid var(--line);
+  }
   .stageRow{
     display:flex;align-items:center;gap:9px;padding:6px 0;
     border-bottom:1px solid #F0F0EE;
@@ -641,6 +648,12 @@
   }
   .planCardGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
   @media (max-width:720px){.planCardGrid{grid-template-columns:repeat(2,1fr);}}
+  .miniBarChart{display:flex;flex-direction:column;gap:7px;}
+  .miniBarRow{display:flex;align-items:center;gap:10px;font-size:12.5px;}
+  .miniBarLabel{width:100px;flex-shrink:0;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .miniBarTrack{flex:1;height:8px;background:#F0F0EE;border-radius:4px;overflow:hidden;}
+  .miniBarFill{height:100%;background:var(--accent);border-radius:4px;transition:width .3s ease;}
+  .miniBarCount{width:22px;flex-shrink:0;text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--ink-soft);}
 
   .myOverdueList{margin-top:10px;}
   .myOverdueList .moItem{
@@ -1323,176 +1336,193 @@
     <div class="hint" id="readOnlyOwnerNotice" style="display:none;background:#F0F0EE;padding:8px 12px;border-radius:6px;margin-bottom:14px;">View only — not your assignment.</div>
     <input type="hidden" id="itemId">
 
-    <div class="field">
-      <label>Nama Pekerjaan</label>
-      <input type="text" id="fNama" placeholder="mis. Pengadaan Jasa Inspeksi Bejana Tekan">
-    </div>
-
-    <div class="field">
-      <label>Dasar Pengadaan</label>
-      <div class="hint" style="margin-bottom:6px;">Memo, Notulen Rapat, Disposisi, Email, FPPM, atau lainnya — tulis bebas dengan detail (nomor, tanggal, perihal, dll).</div>
-      <div class="richToolbar">
-        <button type="button" onclick="window.richExec('bold')" title="Tebal"><b>B</b></button>
-        <button type="button" onclick="window.richExec('italic')" title="Miring"><i>I</i></button>
-        <button type="button" onclick="window.richExec('underline')" title="Garis bawah"><u>U</u></button>
-        <button type="button" onclick="window.richExec('insertUnorderedList')" title="Daftar bullet">• List</button>
-        <button type="button" onclick="window.richExec('insertOrderedList')" title="Daftar bernomor">1. List</button>
-        <button type="button" onclick="window.richExec('removeFormat')" title="Hapus format">Clear</button>
-      </div>
-      <div id="fDasarPengadaan" class="richEditor" contenteditable="true"></div>
-    </div>
-
-    <div class="modalRow2">
+    <div class="formSection">
+      <div class="formSectionTitle">Identitas Pekerjaan</div>
       <div class="field">
-        <label>Kategori</label>
-        <select id="fKategori" onchange="window.onKategoriChange()">
-          <option>Maintenance</option>
-          <option>OYSP</option>
-          <option>Take Over</option>
-          <option>Tools</option>
-          <option>Training</option>
-          <option>Certification</option>
-          <option>Lainnya</option>
+        <label>Nama Pekerjaan</label>
+        <input type="text" id="fNama" placeholder="mis. Pengadaan Jasa Inspeksi Bejana Tekan">
+      </div>
+
+      <div class="field">
+        <label>Dasar Pengadaan</label>
+        <div class="hint" style="margin-bottom:6px;">Memo, Notulen Rapat, Disposisi, Email, FPPM, atau lainnya — tulis bebas dengan detail (nomor, tanggal, perihal, dll).</div>
+        <div class="richToolbar">
+          <button type="button" onclick="window.richExec('bold')" title="Tebal"><b>B</b></button>
+          <button type="button" onclick="window.richExec('italic')" title="Miring"><i>I</i></button>
+          <button type="button" onclick="window.richExec('underline')" title="Garis bawah"><u>U</u></button>
+          <button type="button" onclick="window.richExec('insertUnorderedList')" title="Daftar bullet">• List</button>
+          <button type="button" onclick="window.richExec('insertOrderedList')" title="Daftar bernomor">1. List</button>
+          <button type="button" onclick="window.richExec('removeFormat')" title="Hapus format">Clear</button>
+        </div>
+        <div id="fDasarPengadaan" class="richEditor" contenteditable="true"></div>
+      </div>
+    </div>
+
+    <div class="formSection">
+      <div class="formSectionTitle">Klasifikasi</div>
+      <div class="field" id="jenisPengadaanWrap">
+        <label>Jenis Pengadaan</label>
+        <select id="fJenisPengadaan" onchange="window.onJenisPengadaanChange()">
+          <option>Material</option>
+          <option>Jasa</option>
+          <option>All in</option>
         </select>
+        <div class="hint">All in = gabungan Material &amp; Jasa</div>
       </div>
-      <div class="field" id="kategoriLainnyaWrap" style="display:none;">
-        <label>Kategori (sebutkan)</label>
-        <input type="text" id="fKategoriLainnya">
-      </div>
-      <div class="field" id="contractTypeWrap">
-        <label>Jenis Kontrak</label>
-        <select id="fContractType" onchange="window.onContractTypeChange()">
-          <option>Unit Rate</option>
-          <option>Empowerment</option>
-          <option>PPHK</option>
-          <option>Tools</option>
-          <option>Lainnya</option>
-        </select>
-      </div>
-    </div>
-    <div class="field" id="jenisPengadaanWrap">
-      <label>Jenis Pengadaan</label>
-      <select id="fJenisPengadaan" onchange="window.onJenisPengadaanChange()">
-        <option>Material</option>
-        <option>Jasa</option>
-        <option>All in</option>
-      </select>
-      <div class="hint">All in = gabungan Material &amp; Jasa</div>
-    </div>
-    <div class="field" id="contractTypeLainnyaWrap" style="display:none;">
-      <label>Jenis Kontrak (sebutkan)</label>
-      <input type="text" id="fContractTypeLainnya">
-    </div>
 
-    <div class="modalRow2">
-      <div class="field">
-        <label>Disiplin</label>
-        <select id="fDisiplin" onchange="window.onDisiplinChange()">
-          <option>Static</option>
-          <option>Rotating</option>
-          <option>Instrument</option>
-          <option>Electrical</option>
-          <option>Lainnya</option>
-        </select>
+      <div class="modalRow2">
+        <div class="field">
+          <label>Kategori</label>
+          <select id="fKategori" onchange="window.onKategoriChange()">
+            <option>Maintenance</option>
+            <option>OYSP</option>
+            <option>Take Over</option>
+            <option>Tools</option>
+            <option>Training</option>
+            <option>Certification</option>
+            <option>Lainnya</option>
+          </select>
+        </div>
+        <div class="field" id="kategoriLainnyaWrap" style="display:none;">
+          <label>Kategori (sebutkan)</label>
+          <input type="text" id="fKategoriLainnya">
+        </div>
       </div>
-      <div class="field" id="disiplinLainnyaWrap" style="display:none;">
-        <label>Disiplin (sebutkan)</label>
-        <input type="text" id="fDisiplinLainnya">
-      </div>
-    </div>
 
-    <div class="modalRow2">
-      <div class="field">
-        <label>PIC (Planner)</label>
-        <input type="text" id="fPic" placeholder="Nama planner">
+      <div class="modalRow2">
+        <div class="field" id="contractTypeWrap">
+          <label>Jenis Kontrak</label>
+          <select id="fContractType" onchange="window.onContractTypeChange()">
+            <option>Unit Rate</option>
+            <option>Empowerment</option>
+            <option>PPHK</option>
+            <option>Lainnya</option>
+          </select>
+        </div>
+        <div class="field" id="contractTypeLainnyaWrap" style="display:none;">
+          <label>Jenis Kontrak (sebutkan)</label>
+          <input type="text" id="fContractTypeLainnya">
+        </div>
       </div>
-      <div class="field">
-        <label>Tanggal Mulai Proses</label>
-        <input type="date" id="fStartDate" onchange="window.onStartDateChange()">
-        <div class="hint">Dasar hitung Target per Tahap otomatis (total 36 minggu).</div>
+
+      <div class="modalRow2">
+        <div class="field">
+          <label>Disiplin</label>
+          <select id="fDisiplin" onchange="window.onDisiplinChange()">
+            <option>Static</option>
+            <option>Rotating</option>
+            <option>Instrument</option>
+            <option>Electrical</option>
+            <option>Lainnya</option>
+          </select>
+        </div>
+        <div class="field" id="disiplinLainnyaWrap" style="display:none;">
+          <label>Disiplin (sebutkan)</label>
+          <input type="text" id="fDisiplinLainnya">
+        </div>
       </div>
     </div>
 
-    <label class="retroactiveCheck">
-      <input type="checkbox" id="fRetroactive" onchange="window.onRetroactiveChange()">
-      <span>Pekerjaan ini sudah berjalan/selesai sebelum diinput ke sistem (data historis)</span>
-    </label>
-    <div class="hint" id="retroactiveHint" style="margin-bottom:14px;display:none;"></div>
-
-    <div class="modalRow2">
-      <div class="field">
-        <label>Target Selesai <span class="hint" style="display:inline;">(auto)</span></label>
-        <input type="date" id="fTarget" onchange="window.onTargetManualChange()">
-        <div class="hint" id="targetEditHint"></div>
+    <div class="formSection">
+      <div class="formSectionTitle">Jadwal &amp; Penanggung Jawab</div>
+      <div class="modalRow2">
+        <div class="field">
+          <label>PIC (Planner)</label>
+          <input type="text" id="fPic" placeholder="Nama planner">
+        </div>
+        <div class="field">
+          <label>Tanggal Mulai Proses</label>
+          <input type="date" id="fStartDate" onchange="window.onStartDateChange()">
+          <div class="hint">Dasar hitung Target per Tahap otomatis (total 36 minggu).</div>
+        </div>
       </div>
-      <div class="field">
-        <label>Effective Date / Tanggal Habis Kontrak <span class="hint" style="display:inline;">(khusus kontrak berjalan)</span></label>
-        <input type="date" id="fEffective">
-      </div>
-    </div>
 
-    <div class="field" id="targetRevisionReasonWrap" style="display:none;">
-      <label>Alasan Revisi Target</label>
-      <input type="text" id="fTargetRevisionReason">
-    </div>
-
-    <!-- Checklist sub-tahap berbobot -->
-    <div class="progressSummary">
-      <div>
-        <div class="pctLbl">TOTAL PROGRESS</div>
-        <div class="pctBig" id="pctBigDisplay">0%</div>
-      </div>
-    </div>
-    <div id="stageChecklist"></div>
-
-    <div class="field" style="margin-top:14px;">
-      <label>Catatan Progress</label>
-      <input type="text" id="fProgressNote" placeholder="mis. Pembuatan Lingkup dan OE / Waiting Delivery / Close PO">
-    </div>
-
-    <div class="field">
-      <label>Catatan Akhir / Keterangan</label>
-      <input type="text" id="fKet" placeholder="mis. [Closed], User Purchase, Repeat Order, dll">
-    </div>
-
-    <div class="holdCancelBox">
-      <div class="holdCancelOptions">
-        <label class="holdCancelCheck hc-hold">
-          <input type="checkbox" id="fStatusHold" onchange="window.onHoldCancelChange('hold')">
-          <span>Hold — kontrak ditunda</span>
-        </label>
-        <label class="holdCancelCheck hc-cancel">
-          <input type="checkbox" id="fStatusCancel" onchange="window.onHoldCancelChange('cancel')">
-          <span>Cancel — kontrak dibatalkan</span>
-        </label>
-      </div>
-      <div class="field" id="holdCancelNoteWrap" style="display:none;margin-top:8px;">
-        <label id="holdCancelNoteLabel">Catatan</label>
-        <textarea id="fHoldCancelNote" rows="2" placeholder="Jelaskan alasan hold/cancel"></textarea>
-      </div>
-    </div>
-
-    <div class="priorityBox" id="priorityBox" style="display:none;">
-      <label class="priorityCheck">
-        <input type="checkbox" id="fPriority" onchange="window.onPriorityChange()">
-        <span>⭐ Tandai sebagai Prioritas</span>
+      <label class="retroactiveCheck">
+        <input type="checkbox" id="fRetroactive" onchange="window.onRetroactiveChange()">
+        <span>Pekerjaan ini sudah berjalan/selesai sebelum diinput ke sistem (data historis)</span>
       </label>
-      <div class="field" id="priorityNoteWrap" style="display:none;margin-top:8px;">
-        <label>Catatan Prioritas (opsional)</label>
-        <textarea id="fPriorityNote" rows="2" placeholder="mis. Harus selesai sebelum Turn Around bulan depan"></textarea>
+      <div class="hint" id="retroactiveHint" style="margin-bottom:14px;display:none;"></div>
+
+      <div class="modalRow2">
+        <div class="field">
+          <label>Target Selesai <span class="hint" style="display:inline;">(auto)</span></label>
+          <input type="date" id="fTarget" onchange="window.onTargetManualChange()">
+          <div class="hint" id="targetEditHint"></div>
+        </div>
+        <div class="field">
+          <label>Effective Date / Tanggal Habis Kontrak <span class="hint" style="display:inline;">(khusus kontrak berjalan)</span></label>
+          <input type="date" id="fEffective">
+        </div>
+      </div>
+
+      <div class="field" id="targetRevisionReasonWrap" style="display:none;">
+        <label>Alasan Revisi Target</label>
+        <input type="text" id="fTargetRevisionReason">
       </div>
     </div>
 
-    <div class="escalationBox">
-      <label class="escalationCheck">
-        <input type="checkbox" id="fNeedsManagement" onchange="window.onNeedsManagementChange()">
-        <span>Terkendala — butuh keputusan/dukungan Manajemen (strategic)</span>
-      </label>
-      <div class="field" id="managementNoteWrap" style="display:none;margin-top:8px;">
-        <label>Detail kendala / keputusan yang dibutuhkan</label>
-        <textarea id="fManagementNote" rows="2" placeholder="mis. Menunggu keputusan alokasi budget tambahan dari Manajemen"></textarea>
+    <div class="formSection">
+      <div class="formSectionTitle">Checklist Progress</div>
+      <div class="progressSummary">
+        <div>
+          <div class="pctLbl">TOTAL PROGRESS</div>
+          <div class="pctBig" id="pctBigDisplay">0%</div>
+        </div>
       </div>
-      <div class="hint" id="managementFlaggedHint" style="margin-top:6px;"></div>
+      <div id="stageChecklist"></div>
+
+      <div class="field" style="margin-top:14px;">
+        <label>Catatan Progress</label>
+        <input type="text" id="fProgressNote" placeholder="mis. Pembuatan Lingkup dan OE / Waiting Delivery / Close PO">
+      </div>
+
+      <div class="field">
+        <label>Catatan Akhir / Keterangan</label>
+        <input type="text" id="fKet" placeholder="mis. [Closed], User Purchase, Repeat Order, dll">
+      </div>
+    </div>
+
+    <div class="formSection">
+      <div class="formSectionTitle">Status Khusus</div>
+      <div class="holdCancelBox">
+        <div class="holdCancelOptions">
+          <label class="holdCancelCheck hc-hold">
+            <input type="checkbox" id="fStatusHold" onchange="window.onHoldCancelChange('hold')">
+            <span>Hold — kontrak ditunda</span>
+          </label>
+          <label class="holdCancelCheck hc-cancel">
+            <input type="checkbox" id="fStatusCancel" onchange="window.onHoldCancelChange('cancel')">
+            <span>Cancel — kontrak dibatalkan</span>
+          </label>
+        </div>
+        <div class="field" id="holdCancelNoteWrap" style="display:none;margin-top:8px;">
+          <label id="holdCancelNoteLabel">Catatan</label>
+          <textarea id="fHoldCancelNote" rows="2" placeholder="Jelaskan alasan hold/cancel"></textarea>
+        </div>
+      </div>
+
+      <div class="priorityBox" id="priorityBox" style="display:none;">
+        <label class="priorityCheck">
+          <input type="checkbox" id="fPriority" onchange="window.onPriorityChange()">
+          <span>⭐ Tandai sebagai Prioritas</span>
+        </label>
+        <div class="field" id="priorityNoteWrap" style="display:none;margin-top:8px;">
+          <label>Catatan Prioritas (opsional)</label>
+          <textarea id="fPriorityNote" rows="2" placeholder="mis. Harus selesai sebelum Turn Around bulan depan"></textarea>
+        </div>
+      </div>
+
+      <div class="escalationBox">
+        <label class="escalationCheck">
+          <input type="checkbox" id="fNeedsManagement" onchange="window.onNeedsManagementChange()">
+          <span>Terkendala — butuh keputusan/dukungan Manajemen (strategic)</span>
+        </label>
+        <div class="field" id="managementNoteWrap" style="display:none;margin-top:8px;">
+          <label>Detail kendala / keputusan yang dibutuhkan</label>
+          <textarea id="fManagementNote" rows="2" placeholder="mis. Menunggu keputusan alokasi budget tambahan dari Manajemen"></textarea>
+        </div>
+        <div class="hint" id="managementFlaggedHint" style="margin-top:6px;"></div>
+      </div>
     </div>
 
     <div class="errMsg" id="modalErr"></div>
@@ -4191,12 +4221,43 @@ function renderMyPerformance(items){
   const remainingSum = activeItems.reduce((s,i) => s + (100 - getTotalProgress(i)), 0);
   const avgProgress = total > 0 ? Math.round(myItems.reduce((s,i) => s + getTotalProgress(i), 0) / total) : 0;
 
+  // Jatuh Tempo Minggu Ini — target dalam 7 hari ke depan, belum lewat
+  // (yang sudah lewat sudah masuk daftar "Terlambat" di bawah, tidak
+  // dobel-tampilkan di sini). Untuk perencanaan ke depan, bukan reaktif.
+  const today = new Date(); today.setHours(0,0,0,0);
+  const weekAhead = new Date(today); weekAhead.setDate(weekAhead.getDate() + 7);
+  const dueSoonWeek = activeItems
+    .filter(i => {
+      if(!i.targetSelesai || i.statusKontrak) return false;
+      const t = new Date(i.targetSelesai);
+      return t >= today && t <= weekAhead;
+    })
+    .sort((a,b) => new Date(a.targetSelesai) - new Date(b.targetSelesai));
+
+  // Distribusi Beban per Kategori — dari tugas aktif milik planner ini saja.
+  const catDist = {};
+  activeItems.forEach(i => {
+    const k = KATEGORI_KNOWN.includes(i.kategori) ? i.kategori : "Lainnya";
+    catDist[k] = (catDist[k] || 0) + 1;
+  });
+  const catDistKeys = Object.keys(catDist).sort((a,b) => catDist[b] - catDist[a]);
+  const maxCatCount = catDistKeys.length ? Math.max(...catDistKeys.map(k => catDist[k])) : 0;
+
   const priorityListHtml = myPriority.length === 0
     ? `<div class="hint">Tidak ada tugas prioritas saat ini.</div>`
     : `<div class="myOverdueList">${myPriority.map(i => `
         <div class="moItem" style="cursor:pointer;" onclick='window.switchView("list");window.openEditModal(${JSON.stringify(i.id)})'>
           <span>⭐ ${escapeHtml(i.namaPekerjaan)}</span>
           <span class="moDate">oleh ${escapeHtml(i.priorityMarkedBy || "—")}</span>
+        </div>
+      `).join("")}</div>`;
+
+  const dueSoonListHtml = dueSoonWeek.length === 0
+    ? `<div class="hint">Tidak ada target jatuh tempo dalam 7 hari ke depan.</div>`
+    : `<div class="myOverdueList">${dueSoonWeek.map(i => `
+        <div class="moItem" style="cursor:pointer;" onclick='window.switchView("list");window.openEditModal(${JSON.stringify(i.id)})'>
+          <span>${escapeHtml(i.namaPekerjaan)}</span>
+          <span class="moDate">Target: ${fmtDate(i.targetSelesai)}</span>
         </div>
       `).join("")}</div>`;
 
@@ -4218,6 +4279,16 @@ function renderMyPerformance(items){
         </div>
       `).join("")}</div>`;
 
+  const catDistHtml = catDistKeys.length === 0
+    ? `<div class="hint">Tidak ada tugas aktif saat ini.</div>`
+    : catDistKeys.map(k => `
+        <div class="miniBarRow">
+          <span class="miniBarLabel">${escapeHtml(k)}</span>
+          <div class="miniBarTrack"><div class="miniBarFill" style="width:${maxCatCount ? Math.round(catDist[k] / maxCatCount * 100) : 0}%;"></div></div>
+          <span class="miniBarCount">${catDist[k]}</span>
+        </div>
+      `).join("");
+
   return `
     <div class="dashSection">
       <h3>Kinerja Saya</h3>
@@ -4234,12 +4305,20 @@ function renderMyPerformance(items){
           ${priorityListHtml}
         </div>
         <div style="margin-top:14px;">
+          <div class="stageGroupTitle" style="margin-bottom:8px;">Jatuh Tempo Minggu Ini</div>
+          ${dueSoonListHtml}
+        </div>
+        <div style="margin-top:14px;">
           <div class="stageGroupTitle" style="margin-bottom:8px;">Pekerjaan Saya yang Terlambat</div>
           ${overdueListHtml}
         </div>
         <div style="margin-top:14px;">
           <div class="stageGroupTitle" style="margin-bottom:8px;">Pekerjaan Saya Tanpa Progress (&ge;${STUCK_THRESHOLD_DAYS} hari)</div>
           ${stuckListHtml}
+        </div>
+        <div style="margin-top:14px;">
+          <div class="stageGroupTitle" style="margin-bottom:8px;">Distribusi Beban per Kategori</div>
+          <div class="miniBarChart">${catDistHtml}</div>
         </div>
       </div>
     </div>
@@ -4717,7 +4796,7 @@ window.openEditModal = function(id){
     document.getElementById("fKategoriLainnya").value = item.kategori || "";
     document.getElementById("kategoriLainnyaWrap").style.display = "block";
   }
-  const contractDikenal = ["Unit Rate","Empowerment","PPHK","Tools"];
+  const contractDikenal = ["Unit Rate","Empowerment","PPHK"];
   const jenisPengadaanDikenal = ["Material","Jasa","All in"];
   if(contractDikenal.includes(item.contractType)){
     document.getElementById("fContractType").value = item.contractType;
