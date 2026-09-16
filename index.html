@@ -172,6 +172,11 @@
     color:#fff;background:#6B4FA0;padding:1px 7px;border-radius:8px;margin-left:8px;
     vertical-align:middle;text-transform:uppercase;letter-spacing:.02em;
   }
+  .instructionFlagBadge{
+    display:inline-block;font-size:10.5px;font-family:'IBM Plex Mono',monospace;font-weight:600;
+    color:var(--accent);background:var(--accent-soft);padding:1px 7px;border-radius:8px;margin-left:8px;
+    vertical-align:middle;
+  }
   .retroactiveCheck{
     display:flex;align-items:center;gap:9px;cursor:pointer;font-size:12.5px;
     color:var(--ink-soft);margin-bottom:6px;
@@ -509,6 +514,25 @@
     padding-bottom:6px;margin-bottom:14px;
     border-bottom:1px solid var(--line);
   }
+  .instructionItem{
+    display:flex;gap:8px;padding:8px 0;border-bottom:1px solid #F0F0EE;
+  }
+  .instructionItem:last-child{border-bottom:none;}
+  .instructionItem .iiIcon{font-size:15px;flex-shrink:0;line-height:1.4;}
+  .instructionItem .iiBody{flex:1;min-width:0;}
+  .instructionItem .iiMeta{font-size:11px;color:var(--ink-soft);margin-bottom:2px;}
+  .instructionItem .iiMeta b{color:var(--ink);font-weight:600;}
+  .instructionItem .iiText{font-size:13px;color:var(--ink);}
+  .instructionDoneBtn{
+    background:none;border:1px solid var(--line);border-radius:5px;
+    font-size:11px;padding:2px 8px;cursor:pointer;color:var(--ink-soft);margin-top:4px;
+  }
+  .instructionDoneBtn:hover{background:var(--green-soft);color:var(--green);border-color:var(--green);}
+  .instructionInputRow{display:flex;gap:8px;margin-top:10px;}
+  .instructionInputRow input{
+    flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:6px;
+    font-family:inherit;font-size:13px;
+  }
   .stageRow{
     display:flex;align-items:center;gap:9px;padding:6px 0;
     border-bottom:1px solid #F0F0EE;
@@ -648,12 +672,6 @@
   }
   .planCardGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
   @media (max-width:720px){.planCardGrid{grid-template-columns:repeat(2,1fr);}}
-  .miniBarChart{display:flex;flex-direction:column;gap:7px;}
-  .miniBarRow{display:flex;align-items:center;gap:10px;font-size:12.5px;}
-  .miniBarLabel{width:100px;flex-shrink:0;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-  .miniBarTrack{flex:1;height:8px;background:#F0F0EE;border-radius:4px;overflow:hidden;}
-  .miniBarFill{height:100%;background:var(--accent);border-radius:4px;transition:width .3s ease;}
-  .miniBarCount{width:22px;flex-shrink:0;text-align:right;font-family:'IBM Plex Mono',monospace;color:var(--ink-soft);}
 
   .myOverdueList{margin-top:10px;}
   .myOverdueList .moItem{
@@ -930,6 +948,7 @@
           <option value="progress">In Progress</option>
           <option value="selesai">Selesai</option>
           <option value="overdue">Overdue</option>
+          <option value="priority">⭐ Prioritas</option>
           <option value="expiring">Kontrak Mendekati Habis</option>
           <option value="needsManagement">🚩 Perlu Keputusan Manajemen</option>
           <option value="hold">Hold</option>
@@ -1525,6 +1544,15 @@
       </div>
     </div>
 
+    <div class="formSection" id="instructionSection" style="display:none;">
+      <div class="formSectionTitle">📌 Instruksi</div>
+      <div id="instructionThread"></div>
+      <div class="instructionInputRow">
+        <input type="text" id="fInstructionText" placeholder="Tulis pesan…">
+        <button class="btn btn-primary" id="btnSendInstruction" onclick="window.sendInstructionOrReply()">Kirim</button>
+      </div>
+    </div>
+
     <div class="errMsg" id="modalErr"></div>
 
     <div class="modalFooter">
@@ -1896,6 +1924,93 @@ window.onRetroactiveChange = function(){
   const id = document.getElementById("itemId").value;
   const item = id ? allItems.find(i => i.id === id) : null;
   setFieldPermissions(!!id, item);
+};
+
+// ---------------------------------------------------------------------
+// INSTRUKSI — thread komentar per pekerjaan. Admin/manager/senior_planner
+// kirim instruksi (📌), planner pemilik pekerjaan balas (💬) & tandai
+// selesai (✅). Disimpan sebagai map di field "instructions" pada
+// dokumen itemnya sendiri — bukan koleksi terpisah, cukup untuk skala ini.
+// ---------------------------------------------------------------------
+function renderInstructionThread(item){
+  const canInstruct = ["admin", "manager", "senior_planner"].includes(currentRole);
+  const isOwner = currentUser && item.pic === currentPicName;
+  const entries = item.instructions ? Object.entries(item.instructions).sort((a,b) => tsMillis(a[1].createdAt) - tsMillis(b[1].createdAt)) : [];
+
+  document.getElementById("instructionThread").innerHTML = entries.length === 0
+    ? `<div class="hint">Belum ada instruksi.</div>`
+    : entries.map(([id, e]) => {
+        const icon = e.type === "instruksi" ? "📌" : "💬";
+        const waktu = tsMillis(e.createdAt) ? new Date(tsMillis(e.createdAt)).toLocaleDateString('id-ID', {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : "";
+        const doneBadge = e.type === "instruksi" ? (e.status === "done" ? " ✅" : " ⭕") : "";
+        const doneBtn = (e.type === "instruksi" && e.status !== "done" && isOwner)
+          ? `<button class="instructionDoneBtn" onclick='window.markInstructionDone(${JSON.stringify(id)})'>✓ Selesai</button>`
+          : "";
+        return `
+          <div class="instructionItem">
+            <span class="iiIcon">${icon}</span>
+            <div class="iiBody">
+              <div class="iiMeta"><b>${escapeHtml(e.author || "—")}</b> · ${waktu}${doneBadge}</div>
+              <div class="iiText">${escapeHtml(e.text)}</div>
+              ${doneBtn}
+            </div>
+          </div>
+        `;
+      }).join("");
+
+  const canWrite = canInstruct || isOwner;
+  document.getElementById("fInstructionText").style.display = canWrite ? "block" : "none";
+  document.getElementById("btnSendInstruction").style.display = canWrite ? "inline-flex" : "none";
+  document.getElementById("btnSendInstruction").textContent = canInstruct ? "Kirim" : "Balas";
+}
+
+window.sendInstructionOrReply = async function(){
+  const id = document.getElementById("itemId").value;
+  if(!id) return;
+  const text = document.getElementById("fInstructionText").value.trim();
+  if(!text) return;
+  const item = allItems.find(i => i.id === id);
+  if(!item) return;
+
+  const canInstruct = ["admin", "manager", "senior_planner"].includes(currentRole);
+  const isOwner = item.pic === currentPicName;
+  if(!canInstruct && !isOwner) return;
+
+  const entryId = "e" + Date.now() + Math.random().toString(36).slice(2, 7);
+  const newInstructions = { ...(item.instructions || {}) };
+  newInstructions[entryId] = {
+    text,
+    author: currentName,
+    type: canInstruct ? "instruksi" : "balasan",
+    status: canInstruct ? "open" : null,
+    createdAt: serverTimestamp()
+  };
+
+  try{
+    await updateDoc(doc(db, "procurement_items", id), { instructions: newInstructions, updatedAt: serverTimestamp() });
+    document.getElementById("fInstructionText").value = "";
+    // Render optimis langsung, jangan tunggu round-trip snapshot Firestore.
+    const optimisticEntries = { ...newInstructions, [entryId]: { ...newInstructions[entryId], createdAt: { seconds: Math.floor(Date.now()/1000) } } };
+    renderInstructionThread({ ...item, instructions: optimisticEntries });
+  }catch(e){
+    alert("Gagal mengirim.");
+    console.error(e);
+  }
+};
+
+window.markInstructionDone = async function(entryId){
+  const id = document.getElementById("itemId").value;
+  const item = allItems.find(i => i.id === id);
+  if(!item || !item.instructions || !item.instructions[entryId]) return;
+  const newInstructions = { ...item.instructions };
+  newInstructions[entryId] = { ...newInstructions[entryId], status: "done", doneBy: currentName, doneAt: serverTimestamp() };
+  try{
+    await updateDoc(doc(db, "procurement_items", id), { instructions: newInstructions, updatedAt: serverTimestamp() });
+    renderInstructionThread({ ...item, instructions: newInstructions });
+  }catch(e){
+    alert("Gagal menandai selesai.");
+    console.error(e);
+  }
 };
 
 window.onPriorityChange = function(){
@@ -2493,6 +2608,11 @@ function isAheadOfSchedule(item){
   const targetMs = new Date(item.targetSelesai + "T23:59:59").getTime();
   const daysAhead = Math.floor((targetMs - completedMs) / 86400000);
   return daysAhead >= SLA_WARNING_BUFFER_DAYS;
+}
+
+function countOpenInstructions(item){
+  if(!item.instructions) return 0;
+  return Object.values(item.instructions).filter(e => e.type === "instruksi" && e.status !== "done").length;
 }
 
 function daysUntil(dateStr){
@@ -4234,15 +4354,6 @@ function renderMyPerformance(items){
     })
     .sort((a,b) => new Date(a.targetSelesai) - new Date(b.targetSelesai));
 
-  // Distribusi Beban per Kategori — dari tugas aktif milik planner ini saja.
-  const catDist = {};
-  activeItems.forEach(i => {
-    const k = KATEGORI_KNOWN.includes(i.kategori) ? i.kategori : "Lainnya";
-    catDist[k] = (catDist[k] || 0) + 1;
-  });
-  const catDistKeys = Object.keys(catDist).sort((a,b) => catDist[b] - catDist[a]);
-  const maxCatCount = catDistKeys.length ? Math.max(...catDistKeys.map(k => catDist[k])) : 0;
-
   const priorityListHtml = myPriority.length === 0
     ? `<div class="hint">Tidak ada tugas prioritas saat ini.</div>`
     : `<div class="myOverdueList">${myPriority.map(i => `
@@ -4279,16 +4390,6 @@ function renderMyPerformance(items){
         </div>
       `).join("")}</div>`;
 
-  const catDistHtml = catDistKeys.length === 0
-    ? `<div class="hint">Tidak ada tugas aktif saat ini.</div>`
-    : catDistKeys.map(k => `
-        <div class="miniBarRow">
-          <span class="miniBarLabel">${escapeHtml(k)}</span>
-          <div class="miniBarTrack"><div class="miniBarFill" style="width:${maxCatCount ? Math.round(catDist[k] / maxCatCount * 100) : 0}%;"></div></div>
-          <span class="miniBarCount">${catDist[k]}</span>
-        </div>
-      `).join("");
-
   return `
     <div class="dashSection">
       <h3>Kinerja Saya</h3>
@@ -4315,10 +4416,6 @@ function renderMyPerformance(items){
         <div style="margin-top:14px;">
           <div class="stageGroupTitle" style="margin-bottom:8px;">Pekerjaan Saya Tanpa Progress (&ge;${STUCK_THRESHOLD_DAYS} hari)</div>
           ${stuckListHtml}
-        </div>
-        <div style="margin-top:14px;">
-          <div class="stageGroupTitle" style="margin-bottom:8px;">Distribusi Beban per Kategori</div>
-          <div class="miniBarChart">${catDistHtml}</div>
         </div>
       </div>
     </div>
@@ -4401,6 +4498,7 @@ function getFilteredItems(){
   if(fSignal === "progress") items = items.filter(i => getItemStatus(i).key === "progress");
   if(fSignal === "selesai") items = items.filter(i => getItemStatus(i).key === "selesai");
   if(fSignal === "overdue") items = items.filter(i => getItemStatus(i).key === "overdue");
+  if(fSignal === "priority") items = items.filter(i => i.isPriority);
   if(fSignal === "expiring") items = items.filter(isExpiringSoon);
   if(fSignal === "needsManagement") items = items.filter(i => i.needsManagementSupport);
   if(fSignal === "hold") items = items.filter(i => i.statusKontrak === "hold");
@@ -4540,7 +4638,7 @@ window.renderTable = function(){
     return `
       <tr class="${overdue ? 'rowOverdue' : ''}">
         <td>
-          <div class="jobname">${item.isPriority ? `<span class="priorityFlagBadge">⭐ Prioritas</span> ` : ""}${escapeHtml(item.namaPekerjaan)}${relativeUpdateBadge(item)}${isStuck(item) ? `<span class="stuckBadge">${getAgeDays(item)} Hari Tanpa Progress</span>` : ""}${item.needsManagementSupport ? `<span class="mgmtFlagBadge">🚩 Need Support Management</span>` : ""}${isAheadOfSchedule(item) ? `<span class="aheadFlagBadge">Ahead of Schedule</span>` : ""}</div>
+          <div class="jobname">${item.isPriority ? `<span class="priorityFlagBadge">⭐ Prioritas</span> ` : ""}${escapeHtml(item.namaPekerjaan)}${relativeUpdateBadge(item)}${isStuck(item) ? `<span class="stuckBadge">${getAgeDays(item)} Hari Tanpa Progress</span>` : ""}${item.needsManagementSupport ? `<span class="mgmtFlagBadge">🚩 Need Support Management</span>` : ""}${isAheadOfSchedule(item) ? `<span class="aheadFlagBadge">Ahead of Schedule</span>` : ""}${countOpenInstructions(item) > 0 ? `<span class="instructionFlagBadge">📌 ${countOpenInstructions(item)}</span>` : ""}</div>
           ${item.progressNote ? `<div class="progNote">${escapeHtml(item.progressNote)}</div>` : ""}
         </td>
         <td>
@@ -4775,6 +4873,7 @@ window.openAddModal = function(){
   document.getElementById("btnPrintItem").style.display = "none";
   document.getElementById("btnSaveItem").style.display = "inline-flex";
   document.getElementById("readOnlyOwnerNotice").style.display = "none";
+  document.getElementById("instructionSection").style.display = "none";
   renderStageChecklist(null);
   setFieldPermissions(false, null);
   document.getElementById("itemModal").classList.add("show");
@@ -4886,6 +4985,9 @@ window.openEditModal = function(id){
   document.getElementById("btnSaveItem").style.display = (currentRole === "viewer" || isPlannerNotOwner) ? "none" : "inline-flex";
   document.getElementById("btnPrintItem").style.display = "inline-flex";
   setFieldPermissions(true, item);
+  document.getElementById("instructionSection").style.display = "block";
+  document.getElementById("fInstructionText").value = "";
+  renderInstructionThread(item);
   document.getElementById("itemModal").classList.add("show");
 };
 
