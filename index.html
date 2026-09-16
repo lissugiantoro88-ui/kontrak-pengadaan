@@ -1916,6 +1916,17 @@ const PRESENCE_HEARTBEAT_SEC = 60;
 const PRESENCE_ONLINE_THRESHOLD_SEC = 90; // dianggap offline kalau lebih lama dari ini tanpa heartbeat
 let idleTimer = null;
 const IDLE_TIMEOUT_MS = 10 * 60 * 1000; // 10 menit tanpa aktivitas → auto logout
+// Blokir Ctrl+U (View Source) — SENGAJA tidak menyentuh Ctrl+Shift+J atau
+// shortcut DevTools lain, itu harus tetap bisa diakses kapan pun untuk
+// keperluan debugging. Catatan: ini bukan proteksi sungguhan — selama
+// DevTools tetap terbuka, seluruh source tetap terlihat penuh lewat tab
+// Sources/Elements, cuma jalan pintas Ctrl+U-nya saja yang tidak berfungsi.
+document.addEventListener("keydown", (e) => {
+  if((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "u"){
+    e.preventDefault();
+  }
+});
+
 const IDLE_EVENTS = ["mousemove", "mousedown", "keydown", "scroll", "touchstart", "click"];
 let dashDetailExpanded = false; // supaya panel rincian tidak tertutup ulang tiap kali search diketik
 let targetManuallySetFlag = false; // true kalau target sudah pernah direvisi manual — startDate tidak lagi otomatis timpa
