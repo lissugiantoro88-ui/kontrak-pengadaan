@@ -395,7 +395,8 @@
     background:var(--panel);
     border:1px solid var(--line);
     border-radius:var(--radius);
-    overflow:hidden;
+    overflow-x:auto;
+    overflow-y:hidden;
   }
   table{width:100%;border-collapse:collapse;}
   thead th{
@@ -1007,14 +1008,17 @@
             <tr>
               <th style="width:36px;text-align:center;">No</th>
               <th class="sortable" onclick="window.setPORefSort('tanggalPO')">Tanggal PO</th>
-              <th class="sortable" onclick="window.setPORefSort('nomorPO')">Nomor PO</th>
+              <th class="sortable" onclick="window.setPORefSort('nomorPO')">No. PO</th>
               <th class="sortable" onclick="window.setPORefSort('nama')">Nama Pekerjaan</th>
               <th>Kategori</th>
               <th>Disiplin</th>
               <th>Jenis Kontrak</th>
-              <th class="sortable" onclick="window.setPORefSort('vendor')">Vendor Pemenang</th>
-              <th title="DT untuk Material, Day One untuk Jasa">DT / Day One</th>
-              <th title="Tanggal Onsite untuk Material, Durasi untuk Jasa">Onsite / Durasi</th>
+              <th>Jenis Pengadaan</th>
+              <th class="sortable" onclick="window.setPORefSort('vendor')">Vendor</th>
+              <th>DT</th>
+              <th>Tgl Onsite</th>
+              <th>Day One</th>
+              <th>Durasi</th>
               <th class="sortable" onclick="window.setPORefSort('nilaiSort')" style="text-align:right;">Nilai PO</th>
               <th>Planner</th>
             </tr>
@@ -1358,9 +1362,6 @@
       <div class="field" id="contractTypeWrap">
         <label>Jenis Kontrak</label>
         <select id="fContractType" onchange="window.onContractTypeChange()">
-          <option>All in</option>
-          <option>Material</option>
-          <option>Jasa</option>
           <option>Unit Rate</option>
           <option>Empowerment</option>
           <option>PPHK</option>
@@ -1368,6 +1369,15 @@
           <option>Lainnya</option>
         </select>
       </div>
+    </div>
+    <div class="field" id="jenisPengadaanWrap">
+      <label>Jenis Pengadaan</label>
+      <select id="fJenisPengadaan" onchange="window.onJenisPengadaanChange()">
+        <option>Material</option>
+        <option>Jasa</option>
+        <option>All in</option>
+      </select>
+      <div class="hint">All in = gabungan Material &amp; Jasa</div>
     </div>
     <div class="field" id="contractTypeLainnyaWrap" style="display:none;">
       <label>Jenis Kontrak (sebutkan)</label>
@@ -1754,10 +1764,10 @@ const STAGE_DETAIL_FIELDS = {
     { key:"nomorPO", label:"Nomor PO", type:"text" },
     { key:"tanggalPO", label:"Tanggal PO", type:"date" },
     { key:"nilaiPO", label:"Nilai PO", type:"currency" },
-    { key:"dt", label:"DT", type:"text", placeholder:"mis. 45 hari kerja", showIf:"Material" },
-    { key:"tanggalOnsite", label:"Tanggal Onsite", type:"date", showIf:"Material" },
-    { key:"dayOne", label:"Day One", type:"date", showIf:"Jasa" },
-    { key:"durasiPekerjaan", label:"Durasi Pekerjaan", type:"text", placeholder:"mis. 30 hari kalender", showIf:"Jasa" }
+    { key:"dt", label:"DT", type:"text", placeholder:"mis. 45 hari kerja", showIf:["Material","All in"] },
+    { key:"tanggalOnsite", label:"Tanggal Onsite", type:"date", showIf:["Material","All in"] },
+    { key:"dayOne", label:"Day One", type:"date", showIf:["Jasa","All in"] },
+    { key:"durasiPekerjaan", label:"Durasi Pekerjaan", type:"text", placeholder:"mis. 30 hari kalender", showIf:["Jasa","All in"] }
   ]
 };
 
@@ -1810,12 +1820,17 @@ window.onKategoriChange = function(){
 window.onContractTypeChange = function(){
   const v = document.getElementById("fContractType").value;
   document.getElementById("contractTypeLainnyaWrap").style.display = v === "Lainnya" ? "block" : "none";
-  // Field kondisional di checklist Kontrak/PO (DT/Tanggal Onsite khusus
-  // Material, Day One/Durasi Pekerjaan khusus Jasa) — toggle live tanpa
-  // render ulang seluruh checklist (supaya isian tahap lain tidak hilang).
+};
+
+// Field kondisional di checklist Kontrak/PO — DT & Tanggal Onsite untuk
+// Material, Day One & Durasi Pekerjaan untuk Jasa, KEEMPATNYA untuk All in
+// (gabungan Material & Jasa). Toggle live tanpa render ulang seluruh
+// checklist, supaya isian tahap lain tidak ikut hilang.
+window.onJenisPengadaanChange = function(){
+  const v = document.getElementById("fJenisPengadaan").value;
   document.querySelectorAll('[id^="stageDetailFieldWrap_"]').forEach(el => {
-    const showIf = el.dataset.showif;
-    if(showIf) el.style.display = (showIf === v) ? "block" : "none";
+    const showIfList = (el.dataset.showif || "").split(",").filter(Boolean);
+    if(showIfList.length) el.style.display = showIfList.includes(v) ? "block" : "none";
   });
 };
 window.onDisiplinChange = function(){
@@ -1892,7 +1907,7 @@ function renderStageChecklist(item){
   const details = (item && item.stageDetails) || {};
   // Untuk field detail yang kondisional (mis. DT/Onsite khusus Material,
   // Day One/Durasi khusus Jasa) — ambil Jenis Kontrak saat ini.
-  const currentContractType = item ? item.contractType : document.getElementById("fContractType").value;
+  const currentJenisPengadaan = item ? item.jenisPengadaan : document.getElementById("fJenisPengadaan").value;
   let html = "";
   STAGE_GROUPS.forEach(group => {
     html += `<div class="stageGroup"><div class="stageGroupTitle">${group}</div>`;
@@ -1918,7 +1933,7 @@ function renderStageChecklist(item){
         detailFields.forEach(f => {
           const val = detailVals[f.key] || "";
           const wrapId = `stageDetailFieldWrap_${s.key}_${f.key}`;
-          const wrapDisplay = f.showIf && f.showIf !== currentContractType ? "none" : "block";
+          const wrapDisplay = f.showIf && !f.showIf.includes(currentJenisPengadaan) ? "none" : "block";
           html += `<div id="${wrapId}" data-showif="${f.showIf || ""}" style="display:${wrapDisplay};">`;
           if(f.type === "textarea"){
             html += `
@@ -2731,14 +2746,13 @@ function getPORefRows(){
       const pemenangDetail = (i.stageDetails && i.stageDetails.penetapanPemenang) || {};
       const nilaiRaw = kontrakDetail.nilaiPO || "";
       const nilaiIsObj = nilaiRaw && typeof nilaiRaw === "object";
-      const isMaterial = i.contractType === "Material";
-      const isJasa = i.contractType === "Jasa";
       return {
         id: i.id,
         nama: i.namaPekerjaan || "",
         kategori: i.kategori || "",
         disiplin: i.disiplin || "",
         contractType: i.contractType || "",
+        jenisPengadaan: i.jenisPengadaan || "",
         planner: i.pic || "",
         vendor: pemenangDetail.vendorPemenang || "",
         nomorPO: kontrakDetail.nomorPO || "",
@@ -2747,11 +2761,13 @@ function getPORefRows(){
         nilaiSort: nilaiIsObj ? Number(nilaiRaw.amount) || 0 : 0, // untuk sort numerik murni
         nilaiCurrency: nilaiIsObj ? (nilaiRaw.currency || "IDR") : null, // untuk total per mata uang
         nilaiAmount: nilaiIsObj ? Number(nilaiRaw.amount) || 0 : 0,
-        // Kolom gabungan: DT (Material) / Day One (Jasa) — beda makna
-        // tergantung Jenis Kontrak, ditampilkan di satu kolom karena
-        // saling eksklusif (tidak pernah dua-duanya terisi bersamaan).
-        col1: isMaterial ? (kontrakDetail.dt || "") : (isJasa ? fmtDate(kontrakDetail.dayOne) : ""),
-        col2: isMaterial ? fmtDate(kontrakDetail.tanggalOnsite) : (isJasa ? (kontrakDetail.durasiPekerjaan || "") : "")
+        // 4 kolom terpisah (bukan digabung) — karena "All in" bisa punya
+        // KEEMPATNYA terisi sekaligus (gabungan Material & Jasa), tidak
+        // saling eksklusif lagi seperti sebelumnya.
+        dt: kontrakDetail.dt || "",
+        tanggalOnsite: kontrakDetail.tanggalOnsite || "",
+        dayOne: kontrakDetail.dayOne || "",
+        durasiPekerjaan: kontrakDetail.durasiPekerjaan || ""
       };
     });
 }
@@ -2835,9 +2851,12 @@ window.renderPORefTable = function(){
       <td>${r.kategori ? `<span class="pill ${KATEGORI_PILL_CLASS[r.kategori] || "pill-lainnya"}">${escapeHtml(r.kategori)}</span>` : "—"}</td>
       <td>${escapeHtml(r.disiplin || "—")}</td>
       <td>${escapeHtml(r.contractType || "—")}</td>
+      <td>${escapeHtml(r.jenisPengadaan || "—")}</td>
       <td>${escapeHtml(r.vendor || "—")}</td>
-      <td class="mono">${escapeHtml(r.col1 || "—")}</td>
-      <td class="mono">${escapeHtml(r.col2 || "—")}</td>
+      <td class="mono">${escapeHtml(r.dt || "—")}</td>
+      <td class="mono">${fmtDate(r.tanggalOnsite)}</td>
+      <td class="mono">${fmtDate(r.dayOne)}</td>
+      <td class="mono">${escapeHtml(r.durasiPekerjaan || "—")}</td>
       <td class="mono" style="text-align:right;font-weight:600;">${escapeHtml(r.nilai || "—")}</td>
       <td>${escapeHtml(r.planner || "—")}</td>
     </tr>
@@ -2858,7 +2877,7 @@ window.renderPORefTable = function(){
   tfoot.style.display = "table-footer-group";
   tfoot.innerHTML = `
     <tr style="font-weight:600;border-top:2px solid var(--line);background:#FAFBFC;">
-      <td colspan="10" style="text-align:right;padding:8px 8px;">Total (${rows.length} PO)</td>
+      <td colspan="13" style="text-align:right;padding:8px 8px;">Total (${rows.length} PO)</td>
       <td class="mono" style="text-align:right;padding:8px 8px;">${totalsText}</td>
       <td></td>
     </tr>
@@ -2878,9 +2897,12 @@ window.exportPORefPdf = function(){
       <td>${escapeHtml(r.kategori || "—")}</td>
       <td>${escapeHtml(r.disiplin || "—")}</td>
       <td>${escapeHtml(r.contractType || "—")}</td>
+      <td>${escapeHtml(r.jenisPengadaan || "—")}</td>
       <td>${escapeHtml(r.vendor || "—")}</td>
-      <td>${escapeHtml(r.col1 || "—")}</td>
-      <td>${escapeHtml(r.col2 || "—")}</td>
+      <td>${escapeHtml(r.dt || "—")}</td>
+      <td>${fmtDate(r.tanggalOnsite)}</td>
+      <td>${fmtDate(r.dayOne)}</td>
+      <td>${escapeHtml(r.durasiPekerjaan || "—")}</td>
       <td style="text-align:right;font-weight:700;">${escapeHtml(r.nilai || "—")}</td>
       <td>${escapeHtml(r.planner || "—")}</td>
     </tr>
@@ -2931,14 +2953,14 @@ window.exportPORefPdf = function(){
   <table>
     <thead>
       <tr>
-        <th style="width:24px;text-align:center;">No</th><th>Tanggal PO</th><th>Nomor PO</th><th>Nama Pekerjaan</th><th>Kategori</th>
-        <th>Disiplin</th><th>Jenis Kontrak</th><th>Vendor Pemenang</th><th>DT / Day One</th><th>Onsite / Durasi</th><th style="text-align:right;">Nilai PO</th><th>Planner</th>
+        <th style="width:24px;text-align:center;">No</th><th>Tanggal PO</th><th>No. PO</th><th>Nama Pekerjaan</th><th>Kategori</th>
+        <th>Disiplin</th><th>Jenis Kontrak</th><th>Jenis Pengadaan</th><th>Vendor</th><th>DT</th><th>Tgl Onsite</th><th>Day One</th><th>Durasi</th><th style="text-align:right;">Nilai PO</th><th>Planner</th>
       </tr>
     </thead>
     <tbody>${rowsHtml}</tbody>
     <tfoot>
       <tr>
-        <td colspan="10" style="text-align:right;">Total (${rows.length} PO)</td>
+        <td colspan="13" style="text-align:right;">Total (${rows.length} PO)</td>
         <td style="text-align:right;">${totalsText}</td>
         <td></td>
       </tr>
@@ -2990,7 +3012,7 @@ function stopIdleWatcher(){
 // melakukan perubahan, tapi HANYA admin yang bisa membacanya (rules).
 // ---------------------------------------------------------------------
 const FIELD_LABELS = {
-  namaPekerjaan: "Nama Pekerjaan", kategori: "Kategori", contractType: "Jenis Kontrak", disiplin: "Disiplin",
+  namaPekerjaan: "Nama Pekerjaan", kategori: "Kategori", contractType: "Jenis Kontrak", jenisPengadaan: "Jenis Pengadaan", disiplin: "Disiplin",
   pic: "Planner", startDate: "Tanggal Mulai Proses", targetSelesai: "Target Selesai", effectiveDate: "Effective Date",
   progressNote: "Catatan Progress", keterangan: "Keterangan", dasarPengadaan: "Dasar Pengadaan",
   managementSupportNote: "Detail Kendala Manajemen"
@@ -4639,7 +4661,8 @@ window.openAddModal = function(){
   document.getElementById("itemId").value = "";
   document.getElementById("fNama").value = "";
   document.getElementById("fKategori").value = "Maintenance";
-  document.getElementById("fContractType").value = "All in";
+  document.getElementById("fContractType").value = "Unit Rate";
+  document.getElementById("fJenisPengadaan").value = "All in";
   document.getElementById("fDisiplin").value = "Static";
   resetLainnyaWraps();
   document.getElementById("fPic").value = ["planner", "senior_planner"].includes(currentRole) ? currentPicName : "";
@@ -4694,13 +4717,28 @@ window.openEditModal = function(id){
     document.getElementById("fKategoriLainnya").value = item.kategori || "";
     document.getElementById("kategoriLainnyaWrap").style.display = "block";
   }
-  const contractDikenal = ["All in","Material","Jasa","Unit Rate","Empowerment","PPHK","Tools"];
+  const contractDikenal = ["Unit Rate","Empowerment","PPHK","Tools"];
+  const jenisPengadaanDikenal = ["Material","Jasa","All in"];
   if(contractDikenal.includes(item.contractType)){
     document.getElementById("fContractType").value = item.contractType;
   } else {
+    // Termasuk data LAMA yang contractType-nya kebetulan "Material"/"Jasa"/
+    // "All in" (sebelum field ini dipisah) — Jenis Kontrak-nya sudah tidak
+    // valid lagi, minta diisi ulang manual (nilainya dipindah ke bawah).
     document.getElementById("fContractType").value = "Lainnya";
-    document.getElementById("fContractTypeLainnya").value = item.contractType || "";
+    document.getElementById("fContractTypeLainnya").value = jenisPengadaanDikenal.includes(item.contractType) ? "" : (item.contractType || "");
     document.getElementById("contractTypeLainnyaWrap").style.display = "block";
+  }
+  // Jenis Pengadaan: field baru. Kalau item lama belum punya field ini,
+  // coba migrasi otomatis dari contractType lama (kalau kebetulan salah
+  // satu Material/Jasa/All in) — supaya field kondisional DT/Onsite/dst
+  // tetap jalan benar untuk data lama tanpa perlu diisi ulang manual.
+  if(jenisPengadaanDikenal.includes(item.jenisPengadaan)){
+    document.getElementById("fJenisPengadaan").value = item.jenisPengadaan;
+  } else if(jenisPengadaanDikenal.includes(item.contractType)){
+    document.getElementById("fJenisPengadaan").value = item.contractType;
+  } else {
+    document.getElementById("fJenisPengadaan").value = "All in";
   }
 
   const disiplinDikenal = ["Static","Rotating","Instrument","Electrical"];
@@ -4888,6 +4926,7 @@ window.saveItem = async function(){
     if(kategori === "Lainnya") kategori = document.getElementById("fKategoriLainnya").value.trim() || "Lainnya";
     let contractType = document.getElementById("fContractType").value;
     if(contractType === "Lainnya") contractType = document.getElementById("fContractTypeLainnya").value.trim() || "Lainnya";
+    const jenisPengadaan = document.getElementById("fJenisPengadaan").value;
     let disiplin = document.getElementById("fDisiplin").value;
     if(disiplin === "Lainnya") disiplin = document.getElementById("fDisiplinLainnya").value.trim() || "Lainnya";
 
@@ -4946,6 +4985,7 @@ window.saveItem = async function(){
       namaPekerjaan: nama,
       kategori: kategori,
       contractType: contractType,
+      jenisPengadaan: jenisPengadaan,
       disiplin: disiplin,
       pic: document.getElementById("fPic").value.trim(),
       startDate: document.getElementById("fStartDate").value,
@@ -5160,7 +5200,13 @@ window.handleExcelImport = function(event){
         if(!nama){ skipped++; return; }
 
         const kategori = normalizeKategori(row[3]);
-        const contractType = normalizeContractType(row[4]);
+        const rawContractNormalized = normalizeContractType(row[4]);
+        // Kolom Excel lama cuma punya SATU nilai gabungan untuk ini (belum
+        // ada pemisahan Jenis Kontrak vs Jenis Pengadaan) — pilah sesuai
+        // hasil normalisasinya termasuk kelompok mana.
+        const JENIS_PENGADAAN_SET = ["Material", "Jasa", "All in"];
+        const contractType = JENIS_PENGADAAN_SET.includes(rawContractNormalized) ? "" : rawContractNormalized;
+        const jenisPengadaan = JENIS_PENGADAAN_SET.includes(rawContractNormalized) ? rawContractNormalized : "All in";
         const pic = row[2] ? String(row[2]).trim() : "";
         const progressNote = row[6] ? String(row[6]).trim() : "";
         const closeNote = row[20] ? String(row[20]).trim() : "";
@@ -5187,6 +5233,7 @@ window.handleExcelImport = function(event){
           namaPekerjaan: nama,
           kategori,
           contractType,
+          jenisPengadaan,
           disiplin,
           pic,
           targetSelesai: "",
