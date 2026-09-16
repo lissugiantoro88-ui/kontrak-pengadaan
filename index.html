@@ -1389,7 +1389,7 @@
         <div class="hint">All in = gabungan Material &amp; Jasa</div>
       </div>
 
-      <div class="modalRow2">
+      <div class="modalRow2" id="kategoriRowWrap">
         <div class="field">
           <label>Kategori</label>
           <select id="fKategori" onchange="window.onKategoriChange()">
@@ -1424,7 +1424,7 @@
         </div>
       </div>
 
-      <div class="modalRow2">
+      <div class="modalRow2" id="disiplinRowWrap">
         <div class="field">
           <label>Disiplin</label>
           <select id="fDisiplin" onchange="window.onDisiplinChange()">
@@ -1444,43 +1444,45 @@
 
     <div class="formSection">
       <div class="formSectionTitle">Jadwal &amp; Penanggung Jawab</div>
-      <div class="modalRow2">
-        <div class="field">
-          <label>PIC (Planner)</label>
-          <input type="text" id="fPic" placeholder="Nama planner">
-        </div>
-        <div class="field">
-          <label>Tanggal Mulai Proses</label>
-          <input type="date" id="fStartDate" onchange="window.onStartDateChange()">
-          <div class="hint">Dasar hitung Target per Tahap otomatis (total 36 minggu).</div>
-        </div>
+      <div class="field">
+        <label>PIC (Planner)</label>
+        <input type="text" id="fPic" placeholder="Nama planner">
       </div>
 
-      <label class="retroactiveCheck">
-        <input type="checkbox" id="fRetroactive" onchange="window.onRetroactiveChange()">
-        <span>Pekerjaan ini sudah berjalan/selesai sebelum diinput ke sistem (data historis)</span>
-      </label>
-      <div class="hint" id="retroactiveHint" style="margin-bottom:14px;display:none;"></div>
+      <div id="jadwalNonEmpowermentWrap">
+        <div class="modalRow2">
+          <div class="field">
+            <label>Tanggal Mulai Proses</label>
+            <input type="date" id="fStartDate" onchange="window.onStartDateChange()">
+            <div class="hint">Dasar hitung Target per Tahap otomatis (total 36 minggu).</div>
+          </div>
+          <div class="field">
+            <label>Effective Date / Tanggal Habis Kontrak <span class="hint" style="display:inline;">(khusus kontrak berjalan)</span></label>
+            <input type="date" id="fEffective">
+          </div>
+        </div>
 
-      <div class="modalRow2">
+        <label class="retroactiveCheck">
+          <input type="checkbox" id="fRetroactive" onchange="window.onRetroactiveChange()">
+          <span>Pekerjaan ini sudah berjalan/selesai sebelum diinput ke sistem (data historis)</span>
+        </label>
+        <div class="hint" id="retroactiveHint" style="margin-bottom:14px;display:none;"></div>
+
         <div class="field">
           <label>Target Selesai <span class="hint" style="display:inline;">(auto)</span></label>
           <input type="date" id="fTarget" onchange="window.onTargetManualChange()">
           <div class="hint" id="targetEditHint"></div>
         </div>
-        <div class="field">
-          <label>Effective Date / Tanggal Habis Kontrak <span class="hint" style="display:inline;">(khusus kontrak berjalan)</span></label>
-          <input type="date" id="fEffective">
-        </div>
-      </div>
 
-      <div class="field" id="targetRevisionReasonWrap" style="display:none;">
-        <label>Alasan Revisi Target</label>
-        <input type="text" id="fTargetRevisionReason">
+        <div class="field" id="targetRevisionReasonWrap" style="display:none;">
+          <label>Alasan Revisi Target</label>
+          <input type="text" id="fTargetRevisionReason">
+        </div>
       </div>
     </div>
 
-    <div class="formSection">
+    <!-- ===== Checklist normal (non-Empowerment) ===== -->
+    <div class="formSection" id="checklistNormalWrap">
       <div class="formSectionTitle">Checklist Progress</div>
       <div class="progressSummary">
         <div>
@@ -1501,7 +1503,27 @@
       </div>
     </div>
 
-    <div class="formSection">
+    <!-- ===== Khusus Empowerment: bukan proses kontraktual, cuma catatan WO ke Construction ===== -->
+    <div class="formSection" id="empowermentWrap" style="display:none;">
+      <div class="formSectionTitle">WO Kontrak Empowerment</div>
+      <label class="retroactiveCheck">
+        <input type="checkbox" id="fEmpowermentDone" onchange="window.onEmpowermentDoneChange()">
+        <span>WO sudah diajukan ke Construction</span>
+      </label>
+      <div class="modalRow2" style="margin-top:10px;">
+        <div class="field">
+          <label>Tanggal WO</label>
+          <input type="date" id="fEmpowermentTanggal">
+        </div>
+      </div>
+      <div class="field">
+        <label>Catatan</label>
+        <textarea id="fEmpowermentCatatan" rows="2" placeholder="Catatan singkat, mis. No. WO, tujuan pekerjaan"></textarea>
+      </div>
+    </div>
+
+    <!-- ===== Status Khusus: tidak relevan untuk Empowerment (bukan proses kontraktual) ===== -->
+    <div class="formSection" id="statusKhususWrap">
       <div class="formSectionTitle">Status Khusus</div>
       <div class="holdCancelBox">
         <div class="holdCancelOptions">
@@ -1878,6 +1900,27 @@ window.onKategoriChange = function(){
 window.onContractTypeChange = function(){
   const v = document.getElementById("fContractType").value;
   document.getElementById("contractTypeLainnyaWrap").style.display = v === "Lainnya" ? "block" : "none";
+  window.applyEmpowermentMode();
+};
+
+// Empowerment: bukan proses kontraktual normal — tidak ada Kategori,
+// Disiplin, Target/Jadwal, checklist 12 tahap, atau Status Khusus. Cuma
+// catatan: WO sudah diajukan ke Construction atau belum, tanggal, catatan.
+// Jenis Pengadaan TETAP dipakai (permintaan Empowerment bisa Material/
+// Jasa/All in). PIC tetap dicatat.
+window.applyEmpowermentMode = function(){
+  const isEmpowerment = document.getElementById("fContractType").value === "Empowerment";
+  document.getElementById("kategoriRowWrap").style.display = isEmpowerment ? "none" : "grid";
+  document.getElementById("disiplinRowWrap").style.display = isEmpowerment ? "none" : "grid";
+  document.getElementById("jadwalNonEmpowermentWrap").style.display = isEmpowerment ? "none" : "block";
+  document.getElementById("checklistNormalWrap").style.display = isEmpowerment ? "none" : "block";
+  document.getElementById("statusKhususWrap").style.display = isEmpowerment ? "none" : "block";
+  document.getElementById("empowermentWrap").style.display = isEmpowerment ? "block" : "none";
+};
+
+window.onEmpowermentDoneChange = function(){
+  // Tidak ada logic khusus — checkbox ini murni penanda "sudah diajukan
+  // atau belum", dibaca langsung saat Simpan.
 };
 
 // Field kondisional di checklist Kontrak/PO — DT & Tanggal Onsite untuk
@@ -2536,6 +2579,9 @@ function listenItems(){
 }
 
 function getTotalProgress(item){
+  if(item.contractType === "Empowerment"){
+    return (item.empowermentWO && item.empowermentWO.done) ? 100 : 0;
+  }
   let total = 0;
   STAGE_TEMPLATE.forEach(s => { if(item.stages && item.stages[s.key]) total += s.weight; });
   return total;
@@ -2590,6 +2636,7 @@ function getAgeDays(item){
 }
 
 function isStuck(item){
+  if(item.contractType === "Empowerment") return false; // bukan kinerja, cuma catatan
   if(item.statusKontrak) return false; // hold/cancel: bukan "macet", itu keputusan sengaja
   if(getTotalProgress(item) >= 100) return false;
   const age = getAgeDays(item);
@@ -2890,7 +2937,7 @@ function getPORefRows(){
   // sendiri tanpa sub-tahap lain lengkap (kalau planner klik tidak
   // berurutan), jadi ini lebih akurat memastikan pekerjaan benar2 selesai.
   return allItems
-    .filter(i => getTotalProgress(i) >= 100)
+    .filter(i => i.contractType !== "Empowerment" && getTotalProgress(i) >= 100)
     .map(i => {
       const kontrakDetail = (i.stageDetails && i.stageDetails.kontrakPO) || {};
       const pemenangDetail = (i.stageDetails && i.stageDetails.penetapanPemenang) || {};
@@ -3944,6 +3991,7 @@ function renderPlannerBars(items){
 function renderWLA(items){
   const data = {};
   items.forEach(i => {
+    if(i.contractType === "Empowerment") return; // bukan kinerja, cuma catatan
     const total = getTotalProgress(i);
     if(total >= 100) return; // WLA cuma soal beban AKTIF, yang selesai tidak dihitung
     const p = i.pic || "(Tidak diisi)";
@@ -4331,7 +4379,7 @@ window.exportPdfReport = function(){
 };
 
 function renderMyPerformance(items){
-  const myItems = items.filter(i => i.pic === currentPicName);
+  const myItems = items.filter(i => i.pic === currentPicName && i.contractType !== "Empowerment"); // Empowerment bukan kinerja, cuma catatan
   const total = myItems.length;
   const done = myItems.filter(i => getTotalProgress(i) >= 100).length;
   const overdue = myItems.filter(isProgressOverdue);
@@ -4839,6 +4887,10 @@ window.openAddModal = function(){
   document.getElementById("fNama").value = "";
   document.getElementById("fKategori").value = "Maintenance";
   document.getElementById("fContractType").value = "Unit Rate";
+  document.getElementById("fEmpowermentDone").checked = false;
+  document.getElementById("fEmpowermentTanggal").value = "";
+  document.getElementById("fEmpowermentCatatan").value = "";
+  window.applyEmpowermentMode();
   document.getElementById("fJenisPengadaan").value = "All in";
   document.getElementById("fDisiplin").value = "Static";
   resetLainnyaWraps();
@@ -4918,6 +4970,12 @@ window.openEditModal = function(id){
   } else {
     document.getElementById("fJenisPengadaan").value = "All in";
   }
+
+  const ew = item.empowermentWO || {};
+  document.getElementById("fEmpowermentDone").checked = !!ew.done;
+  document.getElementById("fEmpowermentTanggal").value = ew.tanggal || "";
+  document.getElementById("fEmpowermentCatatan").value = ew.catatan || "";
+  window.applyEmpowermentMode();
 
   const disiplinDikenal = ["Static","Rotating","Instrument","Electrical"];
   if(disiplinDikenal.includes(item.disiplin)){
@@ -5003,7 +5061,7 @@ function setFieldPermissions(isEdit, item){
   document.getElementById("readOnlyOwnerNotice").style.display = isPlannerNotOwner ? "block" : "none";
   const fields = ["fNama","fKategori","fKategoriLainnya","fContractType","fContractTypeLainnya","fDisiplin","fDisiplinLainnya",
                   "fPic","fStartDate","fRetroactive","fEffective","fProgressNote","fKet","fNeedsManagement","fManagementNote",
-                  "fStatusHold","fStatusCancel","fHoldCancelNote"];
+                  "fStatusHold","fStatusCancel","fHoldCancelNote","fEmpowermentDone","fEmpowermentTanggal","fEmpowermentCatatan"];
   fields.forEach(id => { document.getElementById(id).disabled = readOnlyAll; });
   document.querySelectorAll("#stageChecklist input[type=checkbox]").forEach(cb => { cb.disabled = readOnlyAll; });
   document.querySelectorAll(".stageDetailPanel input, .stageDetailPanel textarea, .stageDetailPanel select").forEach(el => { el.disabled = readOnlyAll; });
@@ -5040,9 +5098,15 @@ window.saveItem = async function(){
 
   try{
     if(currentRole === "manager" && id){
+      const existingForLog = allItems.find(i => i.id === id);
+      if(existingForLog && existingForLog.contractType === "Empowerment"){
+        // Empowerment: bukan proses kontraktual, tidak ada target/prioritas
+        // untuk manager approve — tidak ada yang perlu disimpan di sini.
+        window.closeModal();
+        return;
+      }
       // Manager: boleh update targetSelesai DAN/ATAU prioritas (dua-duanya
       // opsional, sesuai apa yang diubah — field lain tetap tidak tersentuh).
-      const existingForLog = allItems.find(i => i.id === id);
       const isPriorityNow = document.getElementById("fPriority").checked;
       const wasPriorityBefore = existingForLog ? !!existingForLog.isPriority : false;
       const oldTarget = existingForLog ? existingForLog.targetSelesai : "";
@@ -5088,6 +5152,37 @@ window.saveItem = async function(){
     const nama = document.getElementById("fNama").value.trim();
     if(!nama){
       errEl.textContent = "Nama pekerjaan wajib diisi.";
+      return;
+    }
+
+    // ===== Empowerment: bukan proses kontraktual normal, cuma catatan =====
+    // Payload jauh lebih sederhana — tidak ada Kategori/Disiplin/Target/
+    // Jadwal/checklist 12 tahap/Status Khusus. Tidak dihitung ke WLA,
+    // Kinerja Saya, atau Summary PO (lihat exclusion di fungsi masing2).
+    if(document.getElementById("fContractType").value === "Empowerment"){
+      const empowermentPayload = {
+        namaPekerjaan: nama,
+        contractType: "Empowerment",
+        jenisPengadaan: document.getElementById("fJenisPengadaan").value,
+        pic: document.getElementById("fPic").value.trim(),
+        dasarPengadaan: sanitizeRichHtml(document.getElementById("fDasarPengadaan").innerHTML.trim()),
+        empowermentWO: {
+          done: document.getElementById("fEmpowermentDone").checked,
+          tanggal: document.getElementById("fEmpowermentTanggal").value,
+          catatan: document.getElementById("fEmpowermentCatatan").value.trim()
+        },
+        updatedAt: serverTimestamp()
+      };
+      if(id){
+        await updateDoc(doc(db, "procurement_items", id), empowermentPayload);
+        logActivity(id, nama, "Update WO Empowerment", empowermentPayload.empowermentWO.done ? "WO ditandai sudah diajukan" : "WO belum diajukan");
+      } else {
+        empowermentPayload.createdAt = serverTimestamp();
+        empowermentPayload.createdBy = currentName;
+        const newRef = await addDoc(collection(db, "procurement_items"), empowermentPayload);
+        logActivity(newRef.id, nama, "Buat WO Empowerment", "Pekerjaan Empowerment baru dicatat");
+      }
+      window.closeModal();
       return;
     }
 
