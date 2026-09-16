@@ -4093,6 +4093,10 @@ window.printSingleItem = function(){
   const id = document.getElementById("itemId").value;
   const item = allItems.find(i => i.id === id);
   if(!item){ alert("Data pekerjaan tidak ditemukan."); return; }
+  if(item.contractType === "Empowerment"){
+    alert("Cetak Ringkasan tidak berlaku untuk Empowerment (bukan proses kontraktual).");
+    return;
+  }
 
   const status = getItemStatus(item);
   const total = getTotalProgress(item);
@@ -5091,7 +5095,7 @@ window.openEditModal = function(id){
   const isPlannerNotOwner = currentRole === "planner" && item.pic !== currentPicName;
   document.getElementById("btnDelete").style.display = (["planner", "admin", "senior_planner"].includes(currentRole) && !isPlannerNotOwner) ? "inline-flex" : "none";
   document.getElementById("btnSaveItem").style.display = (currentRole === "viewer" || isPlannerNotOwner) ? "none" : "inline-flex";
-  document.getElementById("btnPrintItem").style.display = "inline-flex";
+  document.getElementById("btnPrintItem").style.display = (item.contractType === "Empowerment") ? "none" : "inline-flex";
   setFieldPermissions(true, item);
   document.getElementById("instructionSection").style.display = "block";
   document.getElementById("fInstructionText").value = "";
