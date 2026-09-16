@@ -367,7 +367,12 @@
   .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
   .advancedFiltersPanel{
     display:flex;gap:8px;flex-wrap:wrap;align-items:center;
-    margin-top:8px;padding-top:10px;border-top:1px dashed var(--line);
+    margin-top:10px;padding:10px 12px;
+    background:#FAFBFC;border:1px solid var(--line);border-radius:var(--radius);
+  }
+  .advancedFiltersPanel select{
+    padding:6px 8px;border:1px solid var(--line);border-radius:6px;
+    background:#fff;font-size:12.5px;font-family:inherit;color:var(--ink-soft);
   }
   #advFilterBadge{
     display:inline-flex;align-items:center;justify-content:center;
@@ -1593,7 +1598,7 @@
     </div>
 
     <div class="formSection" id="instructionSection" style="display:none;">
-      <div class="formSectionTitle">📌 Instruksi</div>
+      <div class="formSectionTitle">💬 Catatan &amp; Diskusi</div>
       <div id="instructionThread"></div>
       <div class="instructionInputRow">
         <input type="text" id="fInstructionText" placeholder="Tulis pesan…">
@@ -2007,7 +2012,7 @@ function renderInstructionThread(item){
   const entries = item.instructions ? Object.entries(item.instructions).sort((a,b) => tsMillis(a[1].createdAt) - tsMillis(b[1].createdAt)) : [];
 
   document.getElementById("instructionThread").innerHTML = entries.length === 0
-    ? `<div class="hint">Belum ada instruksi.</div>`
+    ? `<div class="hint">Belum ada catatan.</div>`
     : entries.map(([id, e]) => {
         const icon = e.type === "instruksi" ? "📌" : "💬";
         const waktu = tsMillis(e.createdAt) ? new Date(tsMillis(e.createdAt)).toLocaleDateString('id-ID', {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}) : "";
