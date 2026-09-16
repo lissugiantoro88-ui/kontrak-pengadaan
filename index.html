@@ -365,6 +365,16 @@
     gap:10px;
   }
   .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .advancedFiltersPanel{
+    display:flex;gap:8px;flex-wrap:wrap;align-items:center;
+    margin-top:8px;padding-top:10px;border-top:1px dashed var(--line);
+  }
+  #advFilterBadge{
+    display:inline-flex;align-items:center;justify-content:center;
+    min-width:16px;height:16px;padding:0 4px;margin-left:5px;
+    background:var(--accent);color:#fff;border-radius:9px;
+    font-size:10px;font-weight:700;font-family:'IBM Plex Mono',monospace;
+  }
   .myTasksToggle{
     display:flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;flex-shrink:0;
   }
@@ -921,6 +931,25 @@
           <button class="myTasksBtn" id="myTasksBtnAll" onclick="window.setMyTasksFilter(false)">Semua</button>
         </div>
         <input type="text" id="searchKeyword" placeholder="Cari.." oninput="window.onFilterChange()" style="padding:7px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;font-family:inherit;min-width:200px;">
+        <select id="filterPlanner" onchange="window.onFilterChange()">
+          <option value="">Semua Planner</option>
+        </select>
+        <select id="filterSignal" onchange="window.onFilterChange()">
+          <option value="">Semua Status</option>
+          <option value="belum">Belum Dimulai</option>
+          <option value="progress">In Progress</option>
+          <option value="selesai">Selesai</option>
+          <option value="overdue">Overdue</option>
+          <option value="priority">⭐ Prioritas</option>
+          <option value="expiring">Kontrak Mendekati Habis</option>
+          <option value="needsManagement">🚩 Perlu Keputusan Manajemen</option>
+          <option value="hold">Hold</option>
+          <option value="cancel">Cancelled</option>
+        </select>
+        <button class="btn btn-ghost" id="btnAdvancedFiltersToggle" onclick="window.toggleAdvancedFilters()">Filter Lanjutan <span id="advFilterBadge" style="display:none;"></span></button>
+        <button class="btn btn-ghost" onclick="window.resetFilters()">Reset</button>
+      </div>
+      <div class="advancedFiltersPanel" id="advancedFiltersPanel" style="display:none;">
         <select id="filterKategori" onchange="window.onFilterChange()">
           <option value="">Semua Kategori</option>
           <option>Maintenance</option>
@@ -939,22 +968,19 @@
           <option>Electrical</option>
           <option>Lainnya</option>
         </select>
-        <select id="filterPlanner" onchange="window.onFilterChange()">
-          <option value="">Semua Planner</option>
+        <select id="filterJenisPengadaan" onchange="window.onFilterChange()">
+          <option value="">Semua Jenis Pengadaan</option>
+          <option>Material</option>
+          <option>Jasa</option>
+          <option>All in</option>
         </select>
-        <select id="filterSignal" onchange="window.onFilterChange()">
-          <option value="">Semua Status</option>
-          <option value="belum">Belum Dimulai</option>
-          <option value="progress">In Progress</option>
-          <option value="selesai">Selesai</option>
-          <option value="overdue">Overdue</option>
-          <option value="priority">⭐ Prioritas</option>
-          <option value="expiring">Kontrak Mendekati Habis</option>
-          <option value="needsManagement">🚩 Perlu Keputusan Manajemen</option>
-          <option value="hold">Hold</option>
-          <option value="cancel">Cancelled</option>
+        <select id="filterContractType" onchange="window.onFilterChange()">
+          <option value="">Semua Jenis Kontrak</option>
+          <option>Unit Rate</option>
+          <option>Empowerment</option>
+          <option>PPHK</option>
+          <option>Lainnya</option>
         </select>
-        <button class="btn btn-ghost" onclick="window.resetFilters()">Reset</button>
       </div>
       <div style="display:flex;gap:8px;">
         <button class="btn btn-ghost" id="btnBroadcast" style="display:none;" onclick="window.openAnnouncementModal()">📢 Broadcast Info</button>
@@ -3713,6 +3739,7 @@ window.saveNewUser = async function(){
 
 window.goFilterKategori = function(k){
   document.getElementById("filterKategori").value = k;
+  document.getElementById("advancedFiltersPanel").style.display = "flex";
   window.switchView('list');
   window.onFilterChange();
 };
@@ -4499,17 +4526,34 @@ window.resetFilters = function(){
   document.getElementById("searchKeyword").value = "";
   document.getElementById("filterKategori").value = "";
   document.getElementById("filterDisiplin").value = "";
+  document.getElementById("filterJenisPengadaan").value = "";
+  document.getElementById("filterContractType").value = "";
   document.getElementById("filterPlanner").value = "";
   document.getElementById("filterSignal").value = "";
   if(document.getElementById("myTasksToggle").style.display !== "none"){
     document.getElementById("myTasksBtnMine").classList.remove("active");
     document.getElementById("myTasksBtnAll").classList.add("active");
   }
+  document.getElementById("advancedFiltersPanel").style.display = "none";
   window.onFilterChange();
 };
 
+window.toggleAdvancedFilters = function(){
+  const panel = document.getElementById("advancedFiltersPanel");
+  panel.style.display = panel.style.display === "none" ? "flex" : "none";
+};
+
+function updateAdvancedFilterBadge(){
+  const count = ["filterKategori", "filterDisiplin", "filterJenisPengadaan", "filterContractType"]
+    .filter(id => document.getElementById(id).value).length;
+  const badge = document.getElementById("advFilterBadge");
+  badge.style.display = count > 0 ? "inline-flex" : "none";
+  badge.textContent = count;
+}
+
 window.onFilterChange = function(){
   currentPage = 1;
+  updateAdvancedFilterBadge();
   window.renderTable();
   renderStatusOverview();
 };
@@ -4530,6 +4574,8 @@ window.onPageSizeChange = function(){
 function getFilteredItems(){
   const fKategori = document.getElementById("filterKategori").value;
   const fDisiplin = document.getElementById("filterDisiplin").value;
+  const fJenisPengadaan = document.getElementById("filterJenisPengadaan").value;
+  const fContractType = document.getElementById("filterContractType").value;
   const fPlanner = document.getElementById("filterPlanner").value;
   const fSignal = document.getElementById("filterSignal").value;
   const fSearch = (document.getElementById("searchKeyword").value || "").trim().toLowerCase();
@@ -4541,6 +4587,8 @@ function getFilteredItems(){
     items = items.filter(i => i.kategori === fKategori);
   }
   if(fDisiplin) items = items.filter(i => i.disiplin === fDisiplin);
+  if(fJenisPengadaan) items = items.filter(i => i.jenisPengadaan === fJenisPengadaan);
+  if(fContractType) items = items.filter(i => i.contractType === fContractType);
   if(fPlanner) items = items.filter(i => i.pic === fPlanner);
   if(fSignal === "belum") items = items.filter(i => getItemStatus(i).key === "belum");
   if(fSignal === "progress") items = items.filter(i => getItemStatus(i).key === "progress");
@@ -4566,9 +4614,11 @@ function getFilteredItems(){
   if(fSearch) filterLabels.push(`Pencarian: "${fSearch}"`);
   if(fKategori) filterLabels.push(`Kategori: ${fKategori}`);
   if(fDisiplin) filterLabels.push(`Disiplin: ${fDisiplin}`);
+  if(fJenisPengadaan) filterLabels.push(`Jenis Pengadaan: ${fJenisPengadaan}`);
+  if(fContractType) filterLabels.push(`Jenis Kontrak: ${fContractType}`);
   if(fPlanner) filterLabels.push(`Planner: ${fPlanner}`);
   if(fSignal){
-    const map = { belum:"Belum Dimulai", progress:"In Progress", selesai:"Selesai", overdue:"Overdue", expiring:"Kontrak Mendekati Habis", needsManagement:"Perlu Keputusan Manajemen", hold:"Hold", cancel:"Cancelled" };
+    const map = { belum:"Belum Dimulai", progress:"In Progress", selesai:"Selesai", overdue:"Overdue", priority:"Prioritas", expiring:"Kontrak Mendekati Habis", needsManagement:"Perlu Keputusan Manajemen", hold:"Hold", cancel:"Cancelled" };
     filterLabels.push(`Status: ${map[fSignal] || fSignal}`);
   }
 
