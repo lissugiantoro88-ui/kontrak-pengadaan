@@ -322,6 +322,12 @@
     padding:3px 8px;
     border-radius:4px;
   }
+  #unreadMsgBadge{
+    display:inline-flex;align-items:center;justify-content:center;
+    min-width:19px;height:19px;padding:0 5px;
+    background:#E05D5D;color:#fff;border-radius:10px;
+    font-size:11px;font-weight:700;font-family:'IBM Plex Mono',monospace;
+  }
   .sidebarToggleBtn{
     display:none;background:none;border:none;color:#fff;cursor:pointer;
     padding:6px;flex-shrink:0;
@@ -890,6 +896,7 @@
     <div class="who">
       <span id="whoName">—</span>
       <span class="role-badge" id="whoRole">—</span>
+      <span id="unreadMsgBadge" style="display:none;" title="Pesan belum dibaca"></span>
       <button class="btn btn-ghost" style="color:#fff;border-color:rgba(255,255,255,0.25)" onclick="window.openChangePasswordModal()">Ganti Password</button>
       <button class="btn btn-ghost" style="color:#fff;border-color:rgba(255,255,255,0.25)" onclick="window.doLogout()">Keluar</button>
     </div>
@@ -2017,6 +2024,71 @@ window.onRetroactiveChange = function(){
 // selesai (✅). Disimpan sebagai map di field "instructions" pada
 // dokumen itemnya sendiri — bukan koleksi terpisah, cukup untuk skala ini.
 // ---------------------------------------------------------------------
+// Menandai SEMUA entri di thread pekerjaan ini sudah dibaca oleh user yang
+// sedang login. Dipanggil otomatis tiap kali modal detail pekerjaan dibuka
+// (bukan tombol manual) — supaya notifikasi berkurang begitu benar-benar
+// dilihat, sama seperti pola read-receipt aplikasi chat pada umumnya.
+async function markThreadReadByCurrentUser(item){
+  if(!item.instructions || !currentUser) return;
+  const uid = currentUser.uid;
+  const newInstructions = {};
+  let changed = false;
+  Object.entries(item.instructions).forEach(([id, e]) => {
+    if(!e.readBy || !e.readBy[uid]){
+      newInstructions[id] = { ...e, readBy: { ...(e.readBy || {}), [uid]: true } };
+      changed = true;
+    } else {
+      newInstructions[id] = e;
+    }
+  });
+  if(!changed) return;
+  try{
+    await updateDoc(doc(db, "procurement_items", item.id), { instructions: newInstructions });
+    window.updateUnreadBadge();
+  }catch(e){
+    console.error("Gagal menandai dibaca:", e); // best-effort, tidak perlu ganggu user dengan alert
+  }
+}
+
+// Hitung notifikasi personal:
+// - Planner: jumlah INSTRUKSI (dari atasan) yang belum pernah dia buka,
+//   di semua pekerjaan miliknya sendiri.
+// - Admin/Manager/Senior Planner: jumlah BALASAN planner yang belum pernah
+//   dia buka, HANYA di pekerjaan yang pernah dia kirimi instruksi (sesuai
+//   kesepakatan: semua pengirim instruksi di pekerjaan itu ikut dinotifikasi).
+function countUnreadForCurrentUser(){
+  if(!currentUser) return 0;
+  const uid = currentUser.uid;
+  let count = 0;
+  if(currentRole === "planner"){
+    allItems.forEach(item => {
+      if(item.pic !== currentPicName || !item.instructions) return;
+      Object.values(item.instructions).forEach(e => {
+        if(e.type === "instruksi" && !(e.readBy && e.readBy[uid])) count++;
+      });
+    });
+  } else if(["admin", "manager", "senior_planner"].includes(currentRole)){
+    allItems.forEach(item => {
+      if(!item.instructions) return;
+      const entries = Object.values(item.instructions);
+      const pernahKirimInstruksi = entries.some(e => e.type === "instruksi" && e.authorUid === uid);
+      if(!pernahKirimInstruksi) return;
+      entries.forEach(e => {
+        if(e.type === "balasan" && !(e.readBy && e.readBy[uid])) count++;
+      });
+    });
+  }
+  return count;
+}
+
+window.updateUnreadBadge = function(){
+  const badge = document.getElementById("unreadMsgBadge");
+  if(!badge) return;
+  const count = countUnreadForCurrentUser();
+  badge.style.display = count > 0 ? "inline-flex" : "none";
+  badge.textContent = count;
+};
+
 function renderInstructionThread(item){
   const canInstruct = ["admin", "manager", "senior_planner"].includes(currentRole);
   const isOwner = currentUser && item.pic === currentPicName;
@@ -2066,8 +2138,10 @@ window.sendInstructionOrReply = async function(){
   newInstructions[entryId] = {
     text,
     author: currentName,
+    authorUid: currentUser.uid,
     type: canInstruct ? "instruksi" : "balasan",
     status: canInstruct ? "open" : null,
+    readBy: { [currentUser.uid]: true }, // pengirim otomatis dianggap sudah baca pesannya sendiri
     createdAt: serverTimestamp()
   };
 
@@ -2617,6 +2691,7 @@ function listenItems(){
     }
     renderTable();
     renderStatusOverview();
+    window.updateUnreadBadge();
   });
 }
 
@@ -5116,6 +5191,9 @@ window.openEditModal = function(id){
   document.getElementById("instructionSection").style.display = "block";
   document.getElementById("fInstructionText").value = "";
   renderInstructionThread(item);
+  if(!isPlannerNotOwner && currentRole !== "viewer"){
+    markThreadReadByCurrentUser(item); // fire-and-forget, tidak perlu ditunggu
+  }
   document.getElementById("itemModal").classList.add("show");
 };
 
