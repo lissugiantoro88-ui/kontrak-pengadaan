@@ -1843,7 +1843,7 @@ const STAGE_DETAIL_FIELDS = {
     { key:"vendors", label:"Vendor yang Mengirim Penawaran", type:"textarea", placeholder:"Satu vendor per baris" }
   ],
   lingkupKAK: [
-    { key:"lingkupUtama", label:"Lingkup Utama", type:"text" }
+    { key:"lingkupUtama", label:"Lingkup Utama", type:"richtext" }
   ],
   oe: [
     { key:"polaPikir", label:"Pola Pikir OE", type:"select", options:["Last PO","Quotation Vendor","Hasil Analisa"] },
@@ -2268,6 +2268,20 @@ function renderStageChecklist(item){
                   <input type="text" inputmode="numeric" id="stageDetail_${s.key}_${f.key}_amount" value="${escapeHtml(displayAmount)}" placeholder="0" oninput="window.formatCurrencyInput(this)" style="flex:1;">
                 </div>
               </div>`;
+          } else if(f.type === "richtext"){
+            html += `
+              <div class="stageDetailField">
+                <label>${f.label}</label>
+                <div class="richToolbar">
+                  <button type="button" onclick="window.richExecTarget('stageDetail_${s.key}_${f.key}', 'bold')" title="Tebal"><b>B</b></button>
+                  <button type="button" onclick="window.richExecTarget('stageDetail_${s.key}_${f.key}', 'italic')" title="Miring"><i>I</i></button>
+                  <button type="button" onclick="window.richExecTarget('stageDetail_${s.key}_${f.key}', 'underline')" title="Garis bawah"><u>U</u></button>
+                  <button type="button" onclick="window.richExecTarget('stageDetail_${s.key}_${f.key}', 'insertUnorderedList')" title="Daftar bullet">• List</button>
+                  <button type="button" onclick="window.richExecTarget('stageDetail_${s.key}_${f.key}', 'insertOrderedList')" title="Daftar bernomor">1. List</button>
+                  <button type="button" onclick="window.richExecTarget('stageDetail_${s.key}_${f.key}', 'removeFormat')" title="Hapus format">Clear</button>
+                </div>
+                <div id="stageDetail_${s.key}_${f.key}" class="richEditor" contenteditable="true">${val || ""}</div>
+              </div>`;
           } else {
             html += `
               <div class="stageDetailField">
@@ -2378,6 +2392,14 @@ function getStageDetailsFromForm(){
         const amount = amtEl ? amtEl.value.replace(/\D/g, "").trim() : "";
         obj[f.key] = amount ? { currency: currEl ? currEl.value : "IDR", amount: Number(amount) } : "";
         if(amount) hasValue = true;
+      } else if(f.type === "richtext"){
+        // Contenteditable — dibaca dari innerHTML (bukan .value), sanitasi
+        // sama seperti Dasar Pengadaan sebelum disimpan.
+        const el = document.getElementById(`stageDetail_${key}_${f.key}`);
+        const raw = el ? sanitizeRichHtml(el.innerHTML.trim()) : "";
+        const val = (raw === "<br>") ? "" : raw; // contenteditable kosong biasanya cuma berisi <br>
+        obj[f.key] = val;
+        if(val) hasValue = true;
       } else {
         const el = document.getElementById(`stageDetail_${key}_${f.key}`);
         const val = el ? el.value.trim() : "";
@@ -4202,7 +4224,9 @@ window.printSingleItem = function(){
         const fields = STAGE_DETAIL_FIELDS[s.key] || [];
         detailText = fields.map(f => {
           if(!detail[f.key]) return "";
-          const displayVal = f.type === "currency" ? fmtCurrencyValue(detail[f.key]) : detail[f.key];
+          const displayVal = f.type === "currency" ? fmtCurrencyValue(detail[f.key])
+            : f.type === "richtext" ? stripHtmlForSearch(detail[f.key]).trim()
+            : detail[f.key];
           return displayVal ? `${f.label}: ${displayVal}` : "";
         }).filter(Boolean).join(" · ");
       }
@@ -5011,6 +5035,14 @@ window.richExec = function(cmd){
   document.getElementById("fDasarPengadaan").focus();
 };
 
+// Versi generik richExec — dipakai field richtext di stage detail (mis.
+// Lingkup Utama), karena bisa ada beberapa rich editor sekaligus di
+// halaman yang sama, tidak seperti fDasarPengadaan yang cuma satu.
+window.richExecTarget = function(targetId, cmd){
+  document.getElementById(targetId).focus();
+  document.execCommand(cmd, false, null);
+};
+
 // Sanitasi dasar: buang <script> dan atribut event handler (onclick, dst)
 // dari HTML yang dihasilkan contenteditable — jaga-jaga terhadap paste
 // konten aneh dari sumber luar. Bukan sanitasi tingkat enterprise, tapi
@@ -5215,6 +5247,7 @@ function setFieldPermissions(isEdit, item){
   document.querySelectorAll(".stageDetailPanel input, .stageDetailPanel textarea, .stageDetailPanel select").forEach(el => { el.disabled = readOnlyAll; });
   // contenteditable bukan <input>, tidak punya properti "disabled" — dikunci via attribute contenteditable.
   document.getElementById("fDasarPengadaan").contentEditable = readOnlyAll ? "false" : "true";
+  document.querySelectorAll(".stageDetailPanel .richEditor").forEach(el => { el.contentEditable = readOnlyAll ? "false" : "true"; });
   // Target Selesai: SEKARANG otomatis dihitung sistem — HANYA
   // admin/manager/senior_planner yang boleh revisi manual (atau siapa pun
   // saat mode Entri Retroaktif aktif, lihat window.onRetroactiveChange).
