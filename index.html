@@ -586,6 +586,40 @@
     font-family:inherit;font-size:12.5px;background:#fff;box-sizing:border-box;
   }
   .stageDetailField textarea{resize:vertical;}
+
+  /* ===== Daftar Material (tracking material per pekerjaan) ===== */
+  .materialRow{
+    border:1px solid var(--line);border-radius:8px;padding:10px 12px 12px;
+    margin-bottom:10px;background:#FAFAF8;
+  }
+  .materialRowGrid{display:grid;grid-template-columns:2fr 1.3fr .8fr .8fr auto;gap:8px;align-items:end;}
+  .materialRowGrid .field{margin-bottom:0;}
+  .materialRowGrid label{display:block;font-size:11px;color:var(--ink-soft);margin-bottom:3px;}
+  .materialRowGrid input{
+    width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:5px;
+    font-family:inherit;font-size:12.5px;background:#fff;box-sizing:border-box;
+  }
+  .materialRemoveBtn{
+    background:none;border:1px solid var(--line);border-radius:5px;color:var(--red);
+    font-size:12px;padding:7px 10px;cursor:pointer;height:32px;
+  }
+  .materialRemoveBtn:hover{background:var(--red-soft);}
+  .materialStatusRow{display:flex;align-items:center;gap:10px;margin-top:9px;flex-wrap:wrap;}
+  .materialStatusBadge{
+    display:inline-block;font-size:10.5px;font-family:'IBM Plex Mono',monospace;
+    padding:2px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:.03em;font-weight:700;
+  }
+  .materialNoteToggle{
+    background:none;border:none;color:var(--accent);font-size:11.5px;cursor:pointer;
+    padding:0;display:inline-flex;align-items:center;gap:5px;
+  }
+  .materialNoteDot{width:6px;height:6px;border-radius:50%;background:var(--amber);display:inline-block;}
+  .materialNoteBox{margin-top:8px;}
+  .materialNoteBox textarea{
+    width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:5px;
+    font-family:inherit;font-size:12.5px;background:#fff;box-sizing:border-box;resize:vertical;
+  }
+  .materialEmptyHint{font-size:12.5px;color:var(--ink-soft);padding:6px 0 10px;}
   .progressSummary{
     display:flex;align-items:center;justify-content:space-between;
     background:var(--accent-soft);border-radius:8px;padding:10px 14px;margin-bottom:16px;
@@ -784,6 +818,7 @@
   @media (max-width:720px){
     main{padding:16px;}
     .modalRow2{grid-template-columns:1fr;}
+    .materialRowGrid{grid-template-columns:1fr;}
     header.topbar{padding:12px 16px;}
     .tableWrap{overflow-x:auto;}
     table{min-width:760px;}
@@ -1480,6 +1515,16 @@
       </div>
     </div>
 
+    <div class="formSection" id="materialListWrap" style="display:none;">
+      <div class="formSectionTitle">Daftar Material</div>
+      <div class="hint" style="margin-bottom:10px;">
+        Rincian item material untuk pekerjaan ini — bantu tracking kedatangan lintas PO dan cegah pembelian ganda.
+        Status terisi <b>otomatis</b>: dari Nomor PO (tahap Kontrak/PO) dan Qty Diterima yang diinput di sini.
+      </div>
+      <div id="materialListBody"></div>
+      <button type="button" class="btn btn-ghost" id="btnAddMaterial" onclick="window.addMaterialRow()">+ Tambah Material</button>
+    </div>
+
     <div class="formSection">
       <div class="formSectionTitle">Jadwal &amp; Penanggung Jawab</div>
       <div class="field">
@@ -1982,11 +2027,188 @@ window.onJenisPengadaanChange = function(){
     const showIfList = (el.dataset.showif || "").split(",").filter(Boolean);
     if(showIfList.length) el.style.display = showIfList.includes(v) ? "block" : "none";
   });
+  const materialWrap = document.getElementById("materialListWrap");
+  if(materialWrap) materialWrap.style.display = ["Material", "All in"].includes(v) ? "block" : "none";
 };
 window.onDisiplinChange = function(){
   const v = document.getElementById("fDisiplin").value;
   document.getElementById("disiplinLainnyaWrap").style.display = v === "Lainnya" ? "block" : "none";
 };
+
+// ---------------------------------------------------------------------
+// DAFTAR MATERIAL — rincian item material per pekerjaan (lintas-PO
+// tracking, Tahap 1). Status per baris SELALU dihitung otomatis, tidak
+// pernah diisi manual (konsisten dengan filosofi status di seluruh app):
+//   - "PO belum terbit" (belum ada Nomor PO di tahap Kontrak/PO)  -> Direncanakan
+//   - PO sudah terbit, Qty Diterima = 0                           -> Belum Datang
+//   - PO sudah terbit, 0 < Qty Diterima < Qty Pesan               -> Sebagian
+//   - Qty Diterima >= Qty Pesan (Qty Pesan > 0)                   -> Lengkap
+// "PO sudah terbit" diturunkan otomatis dari field Nomor PO di tahap
+// Kontrak/PO (bukan toggle manual terpisah) — sesuai konfirmasi desain.
+// Data disimpan sebagai array of object di field `materialList`, state
+// sumber-kebenarannya dipegang di variabel `materialRowsState` (bukan
+// dibaca ulang dari DOM tiap simpan) supaya add/remove/re-render baris
+// tidak kehilangan input yang sudah diisi user.
+// ---------------------------------------------------------------------
+let materialRowsState = []; // [{id, deskripsi, brand, qtyPesan, qtyDiterima, catatan, noteOpen}]
+let materialRowSeq = 0;
+let materialReadOnly = false; // diset oleh setFieldPermissions()
+
+const MATERIAL_STATUS_DEF = {
+  direncanakan: { label:"Direncanakan", color:"#6B4FA0", bg:"#EFE9F7" },
+  belum:        { label:"Belum Datang", color:"var(--red)", bg:"var(--red-soft)" },
+  sebagian:     { label:"Sebagian",     color:"var(--amber)", bg:"var(--amber-soft)" },
+  lengkap:      { label:"Lengkap",      color:"var(--green)", bg:"var(--green-soft)" }
+};
+
+function isMaterialPOTerbit(){
+  const el = document.getElementById("stageDetail_kontrakPO_nomorPO");
+  return !!(el && el.value.trim());
+}
+
+function computeMaterialStatusKey(row, poTerbit){
+  const qtyPesan = parseFloat(row.qtyPesan) || 0;
+  const qtyDiterima = parseFloat(row.qtyDiterima) || 0;
+  if(!poTerbit) return "direncanakan";
+  if(qtyDiterima <= 0) return "belum";
+  if(qtyPesan > 0 && qtyDiterima >= qtyPesan) return "lengkap";
+  return "sebagian";
+}
+
+function materialRowsFromItem(item){
+  const list = (item && Array.isArray(item.materialList)) ? item.materialList : [];
+  return list.map(m => ({
+    id: ++materialRowSeq,
+    deskripsi: m.deskripsi || "",
+    brand: m.brand || "",
+    qtyPesan: m.qtyPesan != null ? String(m.qtyPesan) : "",
+    qtyDiterima: m.qtyDiterima != null ? String(m.qtyDiterima) : "",
+    catatan: m.catatan || "",
+    noteOpen: false
+  }));
+}
+
+window.addMaterialRow = function(){
+  materialRowsState.push({ id: ++materialRowSeq, deskripsi:"", brand:"", qtyPesan:"", qtyDiterima:"", catatan:"", noteOpen:false });
+  renderMaterialRows();
+};
+
+window.removeMaterialRow = function(rowId){
+  materialRowsState = materialRowsState.filter(r => r.id !== rowId);
+  renderMaterialRows();
+};
+
+window.onMaterialFieldInput = function(rowId, field, value){
+  const row = materialRowsState.find(r => r.id === rowId);
+  if(!row) return;
+  row[field] = value;
+  refreshMaterialStatusBadges(); // qty berubah -> status ikut berubah, tanpa render ulang (biar fokus input tidak hilang)
+};
+
+window.toggleMaterialNote = function(rowId){
+  const row = materialRowsState.find(r => r.id === rowId);
+  if(!row) return;
+  row.noteOpen = !row.noteOpen;
+  renderMaterialRows();
+};
+
+window.onMaterialNoteInput = function(rowId, value){
+  const row = materialRowsState.find(r => r.id === rowId);
+  if(!row) return;
+  row.catatan = value;
+  const dot = document.getElementById(`materialNoteDot_${rowId}`);
+  if(dot) dot.style.display = value.trim() ? "inline-block" : "none";
+};
+
+// Dipanggil setiap Nomor PO (tahap Kontrak/PO) berubah — status semua
+// baris material ikut terpengaruh (PO terbit/belum), tanpa perlu render ulang.
+window.refreshMaterialPOContext = function(){
+  refreshMaterialStatusBadges();
+};
+
+function refreshMaterialStatusBadges(){
+  const poTerbit = isMaterialPOTerbit();
+  materialRowsState.forEach(row => {
+    const badge = document.getElementById(`materialStatusBadge_${row.id}`);
+    if(!badge) return;
+    const key = computeMaterialStatusKey(row, poTerbit);
+    const def = MATERIAL_STATUS_DEF[key];
+    badge.textContent = def.label;
+    badge.style.color = def.color;
+    badge.style.background = def.bg;
+  });
+}
+
+function renderMaterialRows(){
+  const body = document.getElementById("materialListBody");
+  if(!body) return;
+  const readOnly = materialReadOnly;
+  const poTerbit = isMaterialPOTerbit();
+  if(materialRowsState.length === 0){
+    body.innerHTML = `<div class="materialEmptyHint">Belum ada material yang ditambahkan.</div>`;
+  } else {
+    body.innerHTML = materialRowsState.map(row => {
+      const key = computeMaterialStatusKey(row, poTerbit);
+      const def = MATERIAL_STATUS_DEF[key];
+      const hasNote = !!row.catatan.trim();
+      return `
+        <div class="materialRow" data-row-id="${row.id}">
+          <div class="materialRowGrid">
+            <div class="field">
+              <label>Deskripsi Material</label>
+              <input type="text" value="${escapeHtml(row.deskripsi)}" placeholder="mis. Bearing SKF 6205"
+                oninput="window.onMaterialFieldInput(${row.id},'deskripsi',this.value)">
+            </div>
+            <div class="field">
+              <label>Manufacture / Brand</label>
+              <input type="text" value="${escapeHtml(row.brand)}" placeholder="mis. SKF"
+                oninput="window.onMaterialFieldInput(${row.id},'brand',this.value)">
+            </div>
+            <div class="field">
+              <label>Qty Pesan</label>
+              <input type="number" min="0" step="any" value="${escapeHtml(row.qtyPesan)}"
+                oninput="window.onMaterialFieldInput(${row.id},'qtyPesan',this.value)">
+            </div>
+            <div class="field">
+              <label>Qty Diterima</label>
+              <input type="number" min="0" step="any" value="${escapeHtml(row.qtyDiterima)}"
+                oninput="window.onMaterialFieldInput(${row.id},'qtyDiterima',this.value)">
+            </div>
+            <button type="button" class="materialRemoveBtn" title="Hapus material ini" onclick="window.removeMaterialRow(${row.id})">✕</button>
+          </div>
+          <div class="materialStatusRow">
+            <span class="materialStatusBadge" id="materialStatusBadge_${row.id}" style="color:${def.color};background:${def.bg};">${def.label}</span>
+            <button type="button" class="materialNoteToggle" onclick="window.toggleMaterialNote(${row.id})">
+              💬 Catatan
+              <span class="materialNoteDot" id="materialNoteDot_${row.id}" style="display:${hasNote ? "inline-block" : "none"};"></span>
+            </button>
+          </div>
+          <div class="materialNoteBox" style="display:${row.noteOpen ? "block" : "none"};">
+            <textarea rows="2" placeholder="Catatan untuk material ini (opsional)"
+              oninput="window.onMaterialNoteInput(${row.id},this.value)">${escapeHtml(row.catatan)}</textarea>
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+  document.querySelectorAll("#materialListBody input, #materialListBody textarea, #materialListBody .materialRemoveBtn, #materialListBody .materialNoteToggle")
+    .forEach(el => { el.disabled = !!readOnly; });
+  document.getElementById("btnAddMaterial").style.display = readOnly ? "none" : "inline-flex";
+}
+
+function getMaterialListFromState(){
+  // Hanya simpan baris yang minimal punya deskripsi terisi — baris kosong
+  // yang belum sempat diisi (baru ditambah lalu batal) tidak disimpan.
+  return materialRowsState
+    .filter(r => r.deskripsi.trim())
+    .map(r => ({
+      deskripsi: r.deskripsi.trim(),
+      brand: r.brand.trim(),
+      qtyPesan: r.qtyPesan === "" ? null : (parseFloat(r.qtyPesan) || 0),
+      qtyDiterima: r.qtyDiterima === "" ? null : (parseFloat(r.qtyDiterima) || 0),
+      catatan: r.catatan.trim()
+    }));
+}
 
 // Ubah Tanggal Mulai Proses → target ikut hitung ulang OTOMATIS, TAPI HANYA
 // kalau target belum pernah direvisi manual sebelumnya (targetManuallySetFlag
@@ -2283,10 +2505,14 @@ function renderStageChecklist(item){
                 <div id="stageDetail_${s.key}_${f.key}" class="richEditor" contenteditable="true">${val || ""}</div>
               </div>`;
           } else {
+            // Nomor PO (tahap Kontrak/PO) adalah basis auto-status Daftar
+            // Material ("PO sudah terbit" atau belum) — tiap kali diketik,
+            // badge status semua baris material di-refresh live.
+            const poHook = (s.key === "kontrakPO" && f.key === "nomorPO") ? ` oninput="window.refreshMaterialPOContext()"` : "";
             html += `
               <div class="stageDetailField">
                 <label>${f.label}</label>
-                <input type="${f.type}" id="stageDetail_${s.key}_${f.key}" value="${escapeHtml(val)}" placeholder="${f.placeholder || ""}">
+                <input type="${f.type}" id="stageDetail_${s.key}_${f.key}" value="${escapeHtml(val)}" placeholder="${f.placeholder || ""}"${poHook}>
               </div>`;
           }
           html += `</div>`;
@@ -4241,6 +4467,33 @@ window.printSingleItem = function(){
     return `<tr><td colspan="3" style="background:#F0F0EE;font-weight:700;font-size:10.5px;text-transform:uppercase;">${escapeHtml(group)}</td></tr>${rows}`;
   }).join("");
 
+  // Daftar Material — status dihitung ulang dari data TERSIMPAN (bukan form
+  // yang sedang dibuka), pakai logika sama seperti badge live di modal.
+  const MATERIAL_STATUS_HEX = { direncanakan:"#6B4FA0", belum:"#B84A3E", sebagian:"#C77D2E", lengkap:"#3C7A5C" };
+  const MATERIAL_STATUS_LABEL = { direncanakan:"Direncanakan", belum:"Belum Datang", sebagian:"Sebagian", lengkap:"Lengkap" };
+  const materialList = Array.isArray(item.materialList) ? item.materialList : [];
+  const poTerbitSaved = !!(item.stageDetails && item.stageDetails.kontrakPO && (item.stageDetails.kontrakPO.nomorPO || "").trim());
+  const materialRowsHtml = materialList.map(m => {
+    const qtyPesan = parseFloat(m.qtyPesan) || 0;
+    const qtyDiterima = parseFloat(m.qtyDiterima) || 0;
+    let statusKey = "direncanakan";
+    if(poTerbitSaved){
+      if(qtyDiterima <= 0) statusKey = "belum";
+      else if(qtyPesan > 0 && qtyDiterima >= qtyPesan) statusKey = "lengkap";
+      else statusKey = "sebagian";
+    }
+    return `
+      <tr>
+        <td>${escapeHtml(m.deskripsi || "—")}</td>
+        <td>${escapeHtml(m.brand || "—")}</td>
+        <td class="num">${m.qtyPesan != null && m.qtyPesan !== "" ? m.qtyPesan : "—"}</td>
+        <td class="num">${m.qtyDiterima != null && m.qtyDiterima !== "" ? m.qtyDiterima : "—"}</td>
+        <td><span style="color:${MATERIAL_STATUS_HEX[statusKey]};font-weight:700;">${MATERIAL_STATUS_LABEL[statusKey]}</span></td>
+        <td style="font-size:10.5px;color:#5B6472;">${escapeHtml(m.catatan || "")}</td>
+      </tr>
+    `;
+  }).join("");
+
   const now = new Date();
   const generatedAt = now.toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' });
   const fileTitle = `Ringkasan_${item.namaPekerjaan.replace(/[^a-z0-9]+/gi,"-").slice(0,40)}_${now.toISOString().slice(0,10)}`;
@@ -4267,6 +4520,7 @@ window.printSingleItem = function(){
   .statusPill{ display:inline-block; padding:3px 10px; border-radius:12px; color:#fff; font-weight:700; font-size:11px; }
   table{ width:100%; border-collapse:collapse; margin-bottom:14px; }
   td, th{ border:1px solid #ccc; padding:5px 8px; text-align:left; font-size:11px; }
+  td.num, th.num{ text-align:right; font-family:'Courier New',monospace; }
   h2{ font-size:12.5px; border-left:3px solid #2B6CB0; padding-left:7px; margin:16px 0 6px; }
   .richBox{ border:1px solid #ccc; padding:10px; border-radius:4px; font-size:11.5px; }
   .footNote{ margin-top:18px; font-size:9.5px; color:#8A93A0; }
@@ -4301,6 +4555,14 @@ window.printSingleItem = function(){
   ` : ""}
 
   ${item.dasarPengadaan ? `<h2>Dasar Pengadaan</h2><div class="richBox">${item.dasarPengadaan}</div>` : ""}
+
+  ${materialList.length ? `
+  <h2>Daftar Material</h2>
+  <table>
+    <thead><tr><th>Deskripsi Material</th><th>Manufacture/Brand</th><th class="num">Qty Pesan</th><th class="num">Qty Diterima</th><th>Status</th><th>Catatan</th></tr></thead>
+    <tbody>${materialRowsHtml}</tbody>
+  </table>
+  ` : ""}
 
   <h2>Checklist Progress</h2>
   <table>
@@ -4720,10 +4982,13 @@ function getFilteredItems(){
   if(fSignal === "cancel") items = items.filter(i => i.statusKontrak === "cancel");
   if(fSearch){
     items = items.filter(i => {
+      const materialHaystack = Array.isArray(i.materialList)
+        ? i.materialList.map(m => `${m.deskripsi || ""} ${m.brand || ""}`).join(" ")
+        : "";
       const haystack = [
         i.namaPekerjaan, i.pic, i.kategori, i.contractType, i.disiplin,
         i.progressNote, i.keterangan, stripHtmlForSearch(i.dasarPengadaan), i.managementSupportNote,
-        i.sumberKebutuhan
+        i.sumberKebutuhan, materialHaystack
       ].filter(Boolean).join(" ").toLowerCase();
       return haystack.includes(fSearch);
     });
@@ -5071,6 +5336,7 @@ window.openAddModal = function(){
   document.getElementById("fJenisPengadaan").value = "All in";
   document.getElementById("fDisiplin").value = "Static";
   resetLainnyaWraps();
+  materialRowsState = materialRowsFromItem(null);
   document.getElementById("fPic").value = ["planner", "senior_planner"].includes(currentRole) ? currentPicName : "";
   const todayISO = new Date().toISOString().slice(0, 10);
   document.getElementById("fStartDate").value = todayISO;
@@ -5104,6 +5370,8 @@ window.openAddModal = function(){
   document.getElementById("readOnlyOwnerNotice").style.display = "none";
   document.getElementById("instructionSection").style.display = "none";
   renderStageChecklist(null);
+  window.onJenisPengadaanChange();
+  renderMaterialRows();
   setFieldPermissions(false, null);
   document.getElementById("itemModal").classList.add("show");
 };
@@ -5147,6 +5415,7 @@ window.openEditModal = function(id){
   } else {
     document.getElementById("fJenisPengadaan").value = "All in";
   }
+  materialRowsState = materialRowsFromItem(item);
 
   const ew = item.empowermentWO || {};
   document.getElementById("fEmpowermentDone").checked = !!ew.done;
@@ -5205,6 +5474,8 @@ window.openEditModal = function(id){
   document.getElementById("priorityNoteWrap").style.display = item.isPriority ? "block" : "none";
   document.getElementById("modalErr").textContent = "";
   renderStageChecklist(item);
+  window.onJenisPengadaanChange();
+  renderMaterialRows();
 
   const hint = document.getElementById("targetEditHint");
   if(item.targetManuallySet && item.targetLastEditedBy){
@@ -5256,6 +5527,8 @@ function setFieldPermissions(isEdit, item){
   document.getElementById("fTargetRevisionReason").disabled = !canEditTarget || readOnlyAll;
   document.getElementById("fPriority").disabled = isViewer;
   document.getElementById("fPriorityNote").disabled = isViewer;
+  materialReadOnly = readOnlyAll;
+  renderMaterialRows();
 }
 
 window.closeModal = function(){
@@ -5352,6 +5625,7 @@ window.saveItem = async function(){
           tanggal: document.getElementById("fEmpowermentTanggal").value,
           catatan: document.getElementById("fEmpowermentCatatan").value.trim()
         },
+        materialList: getMaterialListFromState(),
         updatedAt: serverTimestamp()
       };
       if(id){
@@ -5458,6 +5732,7 @@ window.saveItem = async function(){
       managementSupportNote: needsManagement ? document.getElementById("fManagementNote").value.trim() : "",
       stages: newStages,
       stageDetails: getStageDetailsFromForm(),
+      materialList: getMaterialListFromState(),
       updatedAt: serverTimestamp()
     };
     // Catat KAPAN PERTAMA KALI ditandai (bukan tiap kali disimpan) — supaya
