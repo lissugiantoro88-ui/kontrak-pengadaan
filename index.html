@@ -1262,13 +1262,12 @@
 
     <!-- ===== VIEW: TRACKING MATERIAL (lintas-pekerjaan, by Equipment Tag) ===== -->
     <div id="viewTrackingMaterial" style="display:none;">
-      <div class="hint" style="margin-bottom:14px;">
-        Rekap Daftar Material dari SEMUA pekerjaan, dikelompokkan per Equipment Tag — bantu cek dulu sebelum bikin pengadaan material baru, jangan sampai ada yang sudah pernah dipesan di pekerjaan lain.
-        Pekerjaan tanpa Equipment Tag ditampilkan tersendiri per nama pekerjaan (kurang akurat untuk pengelompokan, tapi tetap kelihatan).
-      </div>
       <div class="toolbar">
         <div class="filters">
           <input type="text" id="trackSearchInput" placeholder="Cari nama material, brand, atau equipment tag.." oninput="window.renderTrackingMaterial()" style="padding:7px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;font-family:inherit;min-width:260px;">
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-ghost" id="btnExportTrackingPdf" onclick="window.exportTrackingMaterialPdf()">Export PDF</button>
         </div>
       </div>
       <div id="trackingGroupsContainer"></div>
@@ -2210,6 +2209,10 @@ function refreshMaterialStatusBadges(){
       const el = document.getElementById(fid);
       if(el) el.disabled = materialReadOnly || poTerbit;
     });
+    // Qty Diterima cuma relevan (dan baru boleh diisi) begitu PO terbit —
+    // sebelum itu belum ada yang bisa "diterima".
+    const qtyDiterimaWrap = document.getElementById(`matQtyDiterimaWrap_${row.id}`);
+    if(qtyDiterimaWrap) qtyDiterimaWrap.style.display = poTerbit ? "block" : "none";
   });
 }
 
@@ -2244,7 +2247,7 @@ function renderMaterialRows(){
               <input type="number" id="matQtyPesan_${row.id}" min="0" step="any" value="${escapeHtml(row.qtyPesan)}"
                 oninput="window.onMaterialFieldInput(${row.id},'qtyPesan',this.value)" ${lockOrder ? "disabled" : ""}>
             </div>
-            <div class="field">
+            <div class="field" id="matQtyDiterimaWrap_${row.id}" style="display:${poTerbit ? "block" : "none"};">
               <label>Qty Diterima</label>
               <input type="number" id="matQtyDiterima_${row.id}" min="0" step="any" value="${escapeHtml(row.qtyDiterima)}"
                 oninput="window.onMaterialFieldInput(${row.id},'qtyDiterima',this.value)" ${readOnly ? "disabled" : ""}>
@@ -3569,17 +3572,23 @@ function buildTrackingGroups(){
       }
       return { ...m, statusKey };
     });
-    groups.get(key).pekerjaanList.push({ item, materials: materialsWithStatus });
+    // No. PO / DT / Tanggal Onsite hidup di tahap Kontrak/PO (stageDetails),
+    // bukan di Daftar Material itu sendiri — ditarik sekali per pekerjaan
+    // (berlaku untuk semua baris material di pekerjaan itu), bukan per baris.
+    const kontrakDetail = (item.stageDetails && item.stageDetails.kontrakPO) || {};
+    groups.get(key).pekerjaanList.push({
+      item, materials: materialsWithStatus,
+      nomorPO: kontrakDetail.nomorPO || "",
+      dt: kontrakDetail.dt || "",
+      tanggalOnsite: kontrakDetail.tanggalOnsite || ""
+    });
   });
   return groups;
 }
 
-window.renderTrackingMaterial = function(){
-  const container = document.getElementById("trackingGroupsContainer");
-  if(!container) return;
+function getFilteredTrackingEntries(){
   const kw = (document.getElementById("trackSearchInput").value || "").trim().toLowerCase();
   const groups = buildTrackingGroups();
-
   let entries = [...groups.values()];
   if(kw){
     entries = entries.filter(g => {
@@ -3594,6 +3603,13 @@ window.renderTrackingMaterial = function(){
     if(a.tagged !== b.tagged) return a.tagged ? -1 : 1;
     return a.tag.localeCompare(b.tag);
   });
+  return { entries, kw };
+}
+
+window.renderTrackingMaterial = function(){
+  const container = document.getElementById("trackingGroupsContainer");
+  if(!container) return;
+  const { entries, kw } = getFilteredTrackingEntries();
 
   if(entries.length === 0){
     container.innerHTML = `<div class="emptyState"><div class="big">—</div>${kw ? "Tidak ada yang cocok dengan pencarian." : "Belum ada Daftar Material yang diisi di pekerjaan mana pun."}</div>`;
@@ -3602,7 +3618,7 @@ window.renderTrackingMaterial = function(){
 
   container.innerHTML = entries.map(g => {
     const totalMaterials = g.pekerjaanList.reduce((n, p) => n + p.materials.length, 0);
-    const pekerjaanRowsHtml = g.pekerjaanList.map(({ item, materials }) => {
+    const pekerjaanRowsHtml = g.pekerjaanList.map(({ item, materials, nomorPO, dt, tanggalOnsite }) => {
       const matRowsHtml = materials.map(m => {
         const def = MATERIAL_STATUS_DEF[m.statusKey];
         return `
@@ -3612,17 +3628,23 @@ window.renderTrackingMaterial = function(){
             <td class="num">${m.qtyPesan != null && m.qtyPesan !== "" ? m.qtyPesan : "—"}</td>
             <td class="num">${m.qtyDiterima != null && m.qtyDiterima !== "" ? m.qtyDiterima : "—"}</td>
             <td><span class="materialStatusBadge" style="color:${def.color};background:${def.bg};">${def.label}</span></td>
+            <td class="noteCell" style="font-size:11px;color:var(--ink-soft);">${escapeHtml(m.catatan || "")}</td>
           </tr>
         `;
       }).join("");
+      const poMetaParts = [
+        `No. PO: ${nomorPO ? escapeHtml(nomorPO) : "—"}`,
+        dt ? `DT: ${escapeHtml(dt)}` : "",
+        tanggalOnsite ? `Tgl Onsite: ${fmtDate(tanggalOnsite)}` : ""
+      ].filter(Boolean).join(" · ");
       return `
         <div class="trackPekerjaanBlock">
           <div class="trackPekerjaanHead">
-            <span class="trackPekerjaanName" onclick='window.switchView("list");window.openEditModal(${JSON.stringify(item.id)})'>${escapeHtml(item.namaPekerjaan || "—")}</span>
-            <span class="trackPekerjaanMeta">PIC: ${escapeHtml(item.pic || "—")} · ${escapeHtml(item.jenisPengadaan || "—")} · ${getItemStatus(item).label}</span>
+            <span class="trackPekerjaanName" onclick='window.switchView("list");window.openEditModal(${JSON.stringify(item.id)})'>${escapeHtml(item.namaPekerjaan || "—")} →</span>
+            <span class="trackPekerjaanMeta">PIC: ${escapeHtml(item.pic || "—")} · ${escapeHtml(item.jenisPengadaan || "—")} · ${getItemStatus(item).label} · ${poMetaParts}</span>
           </div>
           <table class="trackMaterialTable">
-            <thead><tr><th>Deskripsi Material</th><th>Brand</th><th class="num">Qty Pesan</th><th class="num">Qty Diterima</th><th>Status</th></tr></thead>
+            <thead><tr><th>Deskripsi Material</th><th>Brand</th><th class="num">Qty Pesan</th><th class="num">Qty Diterima</th><th>Status</th><th>Catatan</th></tr></thead>
             <tbody>${matRowsHtml}</tbody>
           </table>
         </div>
@@ -3661,6 +3683,167 @@ window.renderTrackingMaterial = function(){
       </div>
     `;
   }).join("");
+};
+
+window.exportTrackingMaterialPdf = function(){
+  const { entries, kw } = getFilteredTrackingEntries();
+  if(entries.length === 0){
+    alert("Tidak ada data Tracking Material untuk diekspor" + (kw ? " pada pencarian saat ini." : "."));
+    return;
+  }
+
+  const MATERIAL_STATUS_HEX = { direncanakan:"#6B4FA0", belum:"#B84A3E", sebagian:"#C77D2E", lengkap:"#3C7A5C" };
+
+  const now = new Date();
+  const generatedAt = now.toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' });
+  const dateForFile = now.toISOString().slice(0, 10);
+  let fileTitle = "Tracking-Material" + (kw ? `_cari-${kw.replace(/[^a-z0-9]+/gi,"-")}` : "") + "_" + dateForFile;
+
+  // --- Ringkasan agregat: berapa equipment tag, pekerjaan, baris material,
+  // dan sebaran status kedatangan di seluruh grup yang tampil ini. ---
+  let taggedCount = 0, untaggedCount = 0, pekerjaanCount = 0, materialCount = 0;
+  const statusCounts = { direncanakan:0, belum:0, sebagian:0, lengkap:0 };
+  entries.forEach(g => {
+    if(g.tagged) taggedCount++; else untaggedCount++;
+    pekerjaanCount += g.pekerjaanList.length;
+    g.pekerjaanList.forEach(p => p.materials.forEach(m => { materialCount++; statusCounts[m.statusKey]++; }));
+  });
+
+  const groupsHtml = entries.map(g => {
+    const pekerjaanBlocksHtml = g.pekerjaanList.map(({ item, materials, nomorPO, dt, tanggalOnsite }) => {
+      const matRowsHtml = materials.map(m => `
+        <tr>
+          <td>${escapeHtml(m.deskripsi || "—")}</td>
+          <td>${escapeHtml(m.brand || "—")}</td>
+          <td class="num">${m.qtyPesan != null && m.qtyPesan !== "" ? m.qtyPesan : "—"}</td>
+          <td class="num">${m.qtyDiterima != null && m.qtyDiterima !== "" ? m.qtyDiterima : "—"}</td>
+          <td><span class="statusText" style="color:${MATERIAL_STATUS_HEX[m.statusKey]}">${MATERIAL_STATUS_DEF[m.statusKey].label}</span></td>
+          <td class="noteCell">${escapeHtml(m.catatan || "")}</td>
+        </tr>
+      `).join("");
+      const poMetaParts = [
+        `No. PO: ${nomorPO ? escapeHtml(nomorPO) : "—"}`,
+        dt ? `DT: ${escapeHtml(dt)}` : "",
+        tanggalOnsite ? `Tgl Onsite: ${fmtDate(tanggalOnsite)}` : ""
+      ].filter(Boolean).join(" &nbsp;·&nbsp; ");
+      return `
+        <div class="pekerjaanBlock">
+          <div class="pekerjaanBlockHead">
+            <b>${escapeHtml(item.namaPekerjaan || "—")}</b>
+            <span class="metaline">PIC: ${escapeHtml(item.pic || "—")} &nbsp;·&nbsp; ${escapeHtml(item.jenisPengadaan || "—")} &nbsp;·&nbsp; Status: ${getItemStatus(item).label}</span>
+            <span class="metaline">${poMetaParts}</span>
+          </div>
+          <table>
+            <thead><tr><th>Deskripsi Material</th><th>Manufacture/Brand</th><th class="num">Qty Pesan</th><th class="num">Qty Diterima</th><th>Status</th><th>Catatan</th></tr></thead>
+            <tbody>${matRowsHtml}</tbody>
+          </table>
+        </div>
+      `;
+    }).join("");
+
+    let jasaHtml = "";
+    if(g.tagged){
+      const relatedJasa = allItems.filter(i => (i.equipmentTag || "").trim().toLowerCase() === g.tag.toLowerCase() && i.jenisPengadaan === "Jasa");
+      if(relatedJasa.length > 0){
+        jasaHtml = `
+          <div class="jasaBox">
+            <b>Pekerjaan Jasa terkait (Equipment Tag sama):</b>
+            ${relatedJasa.map(i => `${escapeHtml(i.namaPekerjaan || "—")} (PIC: ${escapeHtml(i.pic || "—")}, ${getItemStatus(i).label})`).join("; ")}
+          </div>
+        `;
+      }
+    }
+
+    return `
+      <div class="groupSection">
+        <h2>${g.tagged ? "🏷️ " : ""}${escapeHtml(g.tag)} <span class="groupCount">— ${g.pekerjaanList.length} pekerjaan, ${g.pekerjaanList.reduce((n,p)=>n+p.materials.length,0)} baris material</span></h2>
+        ${pekerjaanBlocksHtml}
+        ${jasaHtml}
+      </div>
+    `;
+  }).join("");
+
+  const reportHtml = `
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<title>${escapeHtml(fileTitle)}</title>
+<style>
+  @page {
+    size: A4 landscape;
+    margin: 15mm;
+    @bottom-center { content: "Halaman " counter(page) " dari " counter(pages); font-size: 9px; color: #8A93A0; }
+  }
+  * { box-sizing: border-box; }
+  body{ font-family:'Arial','Helvetica',sans-serif; color:#1C2530; font-size:11px; margin:0; }
+  .reportHeader{ text-align:center; margin-bottom:18px; border-bottom:2px solid #1C2530; padding-bottom:10px; }
+  .reportHeader .company{ font-size:15px; font-weight:700; letter-spacing:.03em; }
+  .reportHeader .sub{ font-size:11px; color:#5B6472; margin-top:2px; }
+  .reportHeader h1{ font-size:16px; margin:10px 0 4px; }
+  .metaRow{ display:flex; justify-content:space-between; font-size:10px; color:#5B6472; margin-bottom:20px; }
+  .summaryGrid{ display:flex; gap:14px; margin-bottom:20px; }
+  .summaryGrid .box{ flex:1; border:1px solid #ccc; padding:10px; text-align:center; border-radius:4px; }
+  .summaryGrid .box .n{ font-size:20px; font-weight:700; font-family:'Courier New',monospace; }
+  .summaryGrid .box .l{ font-size:9.5px; color:#5B6472; margin-top:2px; text-transform:uppercase; letter-spacing:.03em; }
+  .groupSection{ margin-bottom:22px; page-break-inside:avoid; }
+  h2{
+    font-size:13.5px; background:#1C2530; color:#fff; padding:7px 12px; border-radius:4px;
+    margin:0 0 10px;
+  }
+  .groupCount{ font-weight:400; font-size:10.5px; color:#C9D1DB; }
+  .pekerjaanBlock{ border:1px solid #ddd; border-radius:5px; padding:9px 12px; margin-bottom:10px; }
+  .pekerjaanBlockHead{ margin-bottom:6px; }
+  .pekerjaanBlockHead b{ font-size:12px; }
+  .metaline{ display:block; font-size:10px; color:#5B6472; margin-top:2px; }
+  table{ width:100%; border-collapse:collapse; margin-top:4px; }
+  th, td{ border:1px solid #ccc; padding:4px 7px; text-align:left; font-size:10.5px; }
+  th{ background:#F0F0EE; font-weight:700; }
+  td.num, th.num{ text-align:right; font-family:'Courier New',monospace; }
+  .noteCell{ white-space:pre-wrap; font-size:9.5px; color:#5B6472; }
+  .statusText{ font-weight:700; }
+  .jasaBox{ margin-top:6px; padding:7px 10px; background:#FAFAF8; border-radius:4px; font-size:10.5px; }
+  table, tr, td, th { page-break-inside: avoid; }
+</style>
+</head>
+<body>
+  <div class="reportHeader">
+    <div class="company">PT KILANG PERTAMINA BALIKPAPAN</div>
+    <div class="sub">Tim Planner - Technical Support</div>
+    <h1>Laporan Tracking Material Lintas Pekerjaan</h1>
+  </div>
+
+  <div class="metaRow">
+    <div>Dibuat oleh: <b>${escapeHtml(currentName)}</b> (${currentRole})</div>
+    <div>${kw ? `Pencarian: <b>"${escapeHtml(kw)}"</b>` : "Tanpa filter pencarian — seluruh data"}</div>
+    <div>Tanggal cetak: <b>${generatedAt}</b></div>
+  </div>
+
+  <div class="summaryGrid">
+    <div class="box"><div class="n">${taggedCount}</div><div class="l">Equipment Tag</div></div>
+    <div class="box"><div class="n">${untaggedCount}</div><div class="l">Grup Tanpa Tag</div></div>
+    <div class="box"><div class="n">${pekerjaanCount}</div><div class="l">Pekerjaan Tercakup</div></div>
+    <div class="box"><div class="n">${materialCount}</div><div class="l">Baris Material</div></div>
+    <div class="box" style="border-color:${MATERIAL_STATUS_HEX.belum};"><div class="n" style="color:${MATERIAL_STATUS_HEX.belum};">${statusCounts.belum}</div><div class="l">Belum Datang</div></div>
+    <div class="box" style="border-color:${MATERIAL_STATUS_HEX.lengkap};"><div class="n" style="color:${MATERIAL_STATUS_HEX.lengkap};">${statusCounts.lengkap}</div><div class="l">Lengkap</div></div>
+  </div>
+
+  ${groupsHtml}
+</body>
+</html>
+  `;
+
+  const printWindow = window.open('', '_blank');
+  if(!printWindow){
+    alert("Browser memblokir pop-up. Izinkan pop-up untuk situs ini agar bisa export PDF.");
+    return;
+  }
+  printWindow.document.open();
+  printWindow.document.write(reportHtml);
+  printWindow.document.close();
+  printWindow.document.title = fileTitle;
+  printWindow.focus();
+  setTimeout(() => printWindow.print(), 350);
 };
 
 window.exportPORefPdf = function(){
@@ -4684,21 +4867,19 @@ window.printSingleItem = function(){
     return `<tr><td colspan="3" style="background:#F0F0EE;font-weight:700;font-size:10.5px;text-transform:uppercase;">${escapeHtml(group)}</td></tr>${rows}`;
   }).join("");
 
-  // Daftar Material — status dihitung ulang dari data TERSIMPAN (bukan form
-  // yang sedang dibuka), pakai logika sama seperti badge live di modal.
+  // Daftar Material — Cetak Ringkasan HANYA bisa dipicu dari modal item ini
+  // yang sedang terbuka, jadi dibaca dari STATE LIVE modal (materialRowsState
+  // + checklist checkbox saat ini), bukan snapshot tersimpan — supaya kalau
+  // user baru saja centang/qty tapi belum tekan Simpan, hasil cetak tetap
+  // sama persis dengan yang sedang terlihat di layar (bukan versi lama).
   const MATERIAL_STATUS_HEX = { direncanakan:"#6B4FA0", belum:"#B84A3E", sebagian:"#C77D2E", lengkap:"#3C7A5C" };
   const MATERIAL_STATUS_LABEL = { direncanakan:"Direncanakan", belum:"Belum Datang", sebagian:"Sebagian", lengkap:"Lengkap" };
-  const materialList = Array.isArray(item.materialList) ? item.materialList : [];
-  const poTerbitSaved = !!(item.stages && item.stages.kontrakPO);
+  const poTerbitLive = isMaterialPOTerbit();
+  const materialList = materialRowsState.map(r => ({
+    deskripsi: r.deskripsi, brand: r.brand, qtyPesan: r.qtyPesan, qtyDiterima: r.qtyDiterima, catatan: r.catatan
+  })).filter(m => m.deskripsi.trim());
   const materialRowsHtml = materialList.map(m => {
-    const qtyPesan = parseFloat(m.qtyPesan) || 0;
-    const qtyDiterima = parseFloat(m.qtyDiterima) || 0;
-    let statusKey = "direncanakan";
-    if(poTerbitSaved){
-      if(qtyDiterima <= 0) statusKey = "belum";
-      else if(qtyPesan > 0 && qtyDiterima >= qtyPesan) statusKey = "lengkap";
-      else statusKey = "sebagian";
-    }
+    const statusKey = computeMaterialStatusKey(m, poTerbitLive);
     return `
       <tr>
         <td>${escapeHtml(m.deskripsi || "—")}</td>
