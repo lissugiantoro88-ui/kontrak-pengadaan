@@ -1517,10 +1517,6 @@
 
     <div class="formSection" id="materialListWrap" style="display:none;">
       <div class="formSectionTitle">Daftar Material</div>
-      <div class="hint" style="margin-bottom:10px;">
-        Rincian item material untuk pekerjaan ini — bantu tracking kedatangan lintas PO dan cegah pembelian ganda.
-        Status terisi <b>otomatis</b>: dari Nomor PO (tahap Kontrak/PO) dan Qty Diterima yang diinput di sini.
-      </div>
       <div id="materialListBody"></div>
       <button type="button" class="btn btn-ghost" id="btnAddMaterial" onclick="window.addMaterialRow()">+ Tambah Material</button>
     </div>
@@ -4489,7 +4485,7 @@ window.printSingleItem = function(){
         <td class="num">${m.qtyPesan != null && m.qtyPesan !== "" ? m.qtyPesan : "—"}</td>
         <td class="num">${m.qtyDiterima != null && m.qtyDiterima !== "" ? m.qtyDiterima : "—"}</td>
         <td><span style="color:${MATERIAL_STATUS_HEX[statusKey]};font-weight:700;">${MATERIAL_STATUS_LABEL[statusKey]}</span></td>
-        <td style="font-size:10.5px;color:#5B6472;">${escapeHtml(m.catatan || "")}</td>
+        <td class="noteCell" style="font-size:10.5px;color:#5B6472;">${escapeHtml(m.catatan || "")}</td>
       </tr>
     `;
   }).join("");
@@ -4522,7 +4518,8 @@ window.printSingleItem = function(){
   td, th{ border:1px solid #ccc; padding:5px 8px; text-align:left; font-size:11px; }
   td.num, th.num{ text-align:right; font-family:'Courier New',monospace; }
   h2{ font-size:12.5px; border-left:3px solid #2B6CB0; padding-left:7px; margin:16px 0 6px; }
-  .richBox{ border:1px solid #ccc; padding:10px; border-radius:4px; font-size:11.5px; }
+  .richBox{ border:1px solid #ccc; padding:10px; border-radius:4px; font-size:11.5px; white-space:pre-wrap; }
+  .noteCell{ white-space:pre-wrap; }
   .footNote{ margin-top:18px; font-size:9.5px; color:#8A93A0; }
 </style>
 </head>
