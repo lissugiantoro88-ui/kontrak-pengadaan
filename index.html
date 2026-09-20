@@ -622,12 +622,15 @@
   .materialEmptyHint{font-size:12.5px;color:var(--ink-soft);padding:6px 0 10px;}
 
   /* ===== Tracking Material (tab lintas-pekerjaan) — SATU tabel utuh,
-     lebar kolom konsisten lewat <colgroup>, grup Equipment Tag jadi baris
-     header (bisa expand/collapse), info pekerjaan pakai rowspan supaya
-     tidak berulang di tiap baris material. ===== */
-  table.trackBigTable{width:100%;border-collapse:collapse;font-size:12.5px;table-layout:fixed;}
+     fokus ke material (Deskripsi jadi kolom utama setelah No), lebar kolom
+     proporsional & konsisten lewat <colgroup>, grup Equipment Tag jadi baris
+     header gelap (expand/collapse), info pekerjaan (No.PO/DT/Tgl Onsite)
+     tampil SEKALI sebagai sub-header per pekerjaan (bukan kolom berulang),
+     PIC pakai rowspan di kolom paling kanan. Scroll horizontal otomatis
+     lewat .tableWrap bila layar sempit (table punya min-width). ===== */
+  table.trackBigTable{width:100%;min-width:900px;border-collapse:collapse;font-size:12.5px;table-layout:fixed;}
   table.trackBigTable th, table.trackBigTable td{
-    border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top;
+    border:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top;
     overflow-wrap:break-word;
   }
   table.trackBigTable thead th{
@@ -641,9 +644,16 @@
   .trackChevron{display:inline-block;margin-right:6px;transition:transform .15s;font-size:11px;}
   .trackChevron.collapsed{transform:rotate(-90deg);}
   .trackGroupCount{font-weight:400;font-size:11px;color:#C9D1DB;margin-left:6px;}
-  .trackJobFirstRow td{border-top:2px solid var(--accent-soft);}
-  .trackPekerjaanLink{cursor:pointer;font-weight:600;color:var(--ink);}
+  .trackJobSubRow td{
+    background:var(--accent-soft);border-color:var(--accent-soft);
+    font-size:11.5px;font-weight:600;color:var(--ink);padding:7px 10px;
+  }
+  .trackJobSubRow .metaBit{font-weight:400;color:var(--ink-soft);margin-left:14px;}
+  .trackJobSubRow .metaBit b{font-weight:600;color:var(--ink);}
+  .trackPekerjaanLink{cursor:pointer;font-weight:700;color:var(--ink);}
   .trackPekerjaanLink:hover{color:var(--accent);text-decoration:underline;}
+  .trackGroupHeaderRow .trackPekerjaanLink{color:#fff;}
+  .trackGroupHeaderRow .trackPekerjaanLink:hover{color:#C9D1DB;}
   .trackJasaRow td{background:#FAFAF8;font-size:12px;}
   .trackJasaItem{cursor:pointer;}
   .trackJasaItem:hover{color:var(--accent);text-decoration:underline;}
@@ -1259,8 +1269,7 @@
           <input type="text" id="trackSearchInput" placeholder="Cari nama material, brand, atau equipment tag.." oninput="window.renderTrackingMaterial()" style="padding:7px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;font-family:inherit;min-width:260px;">
         </div>
         <div style="display:flex;gap:8px;">
-          <button class="btn btn-ghost" onclick="window.expandAllTrackGroups()">Expand Semua</button>
-          <button class="btn btn-ghost" onclick="window.collapseAllTrackGroups()">Collapse Semua</button>
+          <button class="btn btn-ghost" id="btnToggleTrackCollapse" onclick="window.toggleAllTrackGroups()">Collapse</button>
           <button class="btn btn-ghost" id="btnExportTrackingPdf" onclick="window.exportTrackingMaterialPdf()">Export PDF</button>
         </div>
       </div>
@@ -3602,24 +3611,57 @@ function getFilteredTrackingEntries(){
   return { entries, kw };
 }
 
+// 8 kolom, fokus ke material (bukan ke pekerjaan): No lalu langsung
+// Deskripsi Material di paling kiri (poin fokus tracking), PIC di paling
+// kanan. Info pekerjaan (No.PO/DT/Tgl Onsite) TIDAK jadi kolom tersendiri —
+// ditulis sekali sebagai sub-header di atas baris2 material pekerjaan itu.
 const TRACK_COLGROUP_HTML = `
   <colgroup>
-    <col style="width:3%"><col style="width:14%"><col style="width:8%"><col style="width:6%">
-    <col style="width:8%"><col style="width:6%"><col style="width:7%"><col style="width:15%">
-    <col style="width:9%"><col style="width:6%"><col style="width:6%"><col style="width:6%"><col style="width:6%">
+    <col style="width:4%"><col style="width:25%"><col style="width:12%"><col style="width:8%">
+    <col style="width:8%"><col style="width:10%"><col style="width:21%"><col style="width:12%">
   </colgroup>
 `;
 const TRACK_HEADERS_HTML = `
   <tr>
-    <th class="num">No</th><th>Pekerjaan</th><th>PIC</th><th>Jenis</th><th>No. PO</th><th>DT</th><th>Tgl Onsite</th>
-    <th>Deskripsi Material</th><th>Brand</th><th class="num">Qty Pesan</th><th class="num">Qty Diterima</th><th>Status</th><th>Catatan</th>
+    <th class="num">No</th><th>Deskripsi Material</th><th>Brand</th><th class="num">Qty Pesan</th>
+    <th class="num">Qty Diterima</th><th>Status</th><th>Catatan</th><th>PIC</th>
   </tr>
 `;
+const TRACK_COLSPAN = 8;
 
 // Satu builder dipakai BERSAMA oleh tampilan layar (interaktif, bisa
 // expand/collapse) dan export PDF (statis, selalu tampil penuh) — supaya
 // keduanya selalu identik strukturnya, tidak ada risiko "beda di layar vs
 // di PDF" seperti sebelumnya.
+//
+// Struktur baris per grup:
+//  - Grup BER-TAG (>=1 pekerjaan berbagi Equipment Tag yang sama): 1 baris
+//    header gelap (nama tag, bisa expand/collapse), lalu per pekerjaan ada
+//    1 baris sub-header (nama pekerjaan + No.PO/DT/Tgl Onsite sekali saja),
+//    lalu baris2 material-nya.
+//  - Grup TANPA TAG (selalu tepat 1 pekerjaan): header gelap & sub-header
+//    digabung jadi SATU baris saja (nama pekerjaan + info PO), supaya nama
+//    pekerjaan tidak tertulis dua kali.
+function buildJobMetaBits(nomorPO, dt, tanggalOnsite){
+  const bits = [];
+  bits.push(`<span class="metaBit">No. PO: <b>${nomorPO ? escapeHtml(nomorPO) : "—"}</b></span>`);
+  bits.push(`<span class="metaBit">DT: <b>${dt ? escapeHtml(dt) : "—"}</b></span>`);
+  bits.push(`<span class="metaBit">Tgl Onsite: <b>${tanggalOnsite ? fmtDate(tanggalOnsite) : "—"}</b></span>`);
+  return bits.join("");
+}
+function buildMaterialRowHtml(m, rowNo, pic, rowspan, isFirstOfJob){
+  const def = MATERIAL_STATUS_DEF[m.statusKey];
+  let row = `<tr class="trackDataRow"><td class="num">${rowNo}</td>`;
+  row += `<td>${escapeHtml(m.deskripsi || "—")}</td>`;
+  row += `<td>${escapeHtml(m.brand || "—")}</td>`;
+  row += `<td class="num">${m.qtyPesan != null && m.qtyPesan !== "" ? m.qtyPesan : "—"}</td>`;
+  row += `<td class="num">${m.qtyDiterima != null && m.qtyDiterima !== "" ? m.qtyDiterima : "—"}</td>`;
+  row += `<td><span class="materialStatusBadge" style="color:${def.color};background:${def.bg};">${def.label}</span></td>`;
+  row += `<td class="noteCell">${escapeHtml(m.catatan || "")}</td>`;
+  if(isFirstOfJob) row += `<td rowspan="${rowspan}">${escapeHtml(pic || "—")}</td>`;
+  row += `</tr>`;
+  return row;
+}
 function buildTrackingRowsHtml(entries, opts){
   opts = opts || {};
   const interactive = !!opts.interactive;
@@ -3630,51 +3672,56 @@ function buildTrackingRowsHtml(entries, opts){
     const collapsed = interactive && !forceExpand && trackCollapsedGroups.has(g.key);
     const headerOnclick = interactive ? ` onclick='window.toggleTrackGroup(${JSON.stringify(g.key)})'` : "";
     const chevron = interactive ? `<span class="trackChevron ${collapsed ? "collapsed" : ""}">▾</span>` : "";
-    html += `
-      <tr class="trackGroupHeaderRow"${headerOnclick}>
-        <td colspan="13">${chevron}${g.tagged ? "🏷️ " : ""}${escapeHtml(g.tag)}<span class="trackGroupCount">— ${g.pekerjaanList.length} pekerjaan · ${totalMaterials} baris material</span></td>
-      </tr>
-    `;
+    const rowStyle = collapsed ? ' style="display:none;"' : "";
+    const rowDataAttr = interactive ? ` data-group="${escapeHtml(g.key)}"` : "";
     let rowNo = 0;
-    g.pekerjaanList.forEach(({ item, materials, nomorPO, dt, tanggalOnsite }) => {
+
+    if(g.tagged){
+      // Baris header grup (nama tag) — bisa di-collapse, menaungi semua pekerjaan di bawahnya.
+      html += `
+        <tr class="trackGroupHeaderRow"${headerOnclick}>
+          <td colspan="${TRACK_COLSPAN}">${chevron}🏷️ ${escapeHtml(g.tag)}<span class="trackGroupCount">— ${g.pekerjaanList.length} pekerjaan · ${totalMaterials} baris material</span></td>
+        </tr>
+      `;
+      g.pekerjaanList.forEach(({ item, materials, nomorPO, dt, tanggalOnsite }) => {
+        const jobCell = interactive
+          ? `<span class="trackPekerjaanLink" onclick='window.switchView("list");window.openEditModal(${JSON.stringify(item.id)})'>${escapeHtml(item.namaPekerjaan || "—")}</span>`
+          : `<b>${escapeHtml(item.namaPekerjaan || "—")}</b>`;
+        html += `<tr class="trackJobSubRow"${rowDataAttr}${rowStyle}><td colspan="${TRACK_COLSPAN}">${jobCell}${buildJobMetaBits(nomorPO, dt, tanggalOnsite)}</td></tr>`;
+        const rowspan = materials.length;
+        materials.forEach((m, idx) => {
+          rowNo++;
+          html += buildMaterialRowHtml(m, rowNo, item.pic, rowspan, idx === 0)
+            .replace('<tr class="trackDataRow">', `<tr class="trackDataRow"${rowDataAttr}${rowStyle}>`);
+        });
+      });
+    } else {
+      // Grup tanpa tag = tepat 1 pekerjaan. Header + sub-header digabung
+      // jadi satu baris supaya nama pekerjaan tidak tertulis dua kali.
+      const { item, materials, nomorPO, dt, tanggalOnsite } = g.pekerjaanList[0];
+      const jobCell = interactive
+        ? `<span class="trackPekerjaanLink" onclick='window.switchView("list");window.openEditModal(${JSON.stringify(item.id)})'>${escapeHtml(item.namaPekerjaan || "—")}</span>`
+        : `<b>${escapeHtml(item.namaPekerjaan || "—")}</b>`;
+      html += `
+        <tr class="trackGroupHeaderRow"${headerOnclick}>
+          <td colspan="${TRACK_COLSPAN}">${chevron}${jobCell}<span class="trackGroupCount" style="color:#C9D1DB;">(Tanpa Equipment Tag)</span>${buildJobMetaBits(nomorPO, dt, tanggalOnsite).replace(/class="metaBit"/g, 'class="metaBit" style="color:#C9D1DB;"')}</td>
+        </tr>
+      `;
       const rowspan = materials.length;
       materials.forEach((m, idx) => {
         rowNo++;
-        const rowStyle = collapsed ? ' style="display:none;"' : "";
-        const rowDataAttr = interactive ? ` data-group="${escapeHtml(g.key)}"` : "";
-        const firstCls = idx === 0 ? " trackJobFirstRow" : "";
-        let row = `<tr class="trackDataRow${firstCls}"${rowDataAttr}${rowStyle}><td class="num">${rowNo}</td>`;
-        if(idx === 0){
-          const jobCell = interactive
-            ? `<span class="trackPekerjaanLink" onclick='window.switchView("list");window.openEditModal(${JSON.stringify(item.id)})'>${escapeHtml(item.namaPekerjaan || "—")}</span>`
-            : `<b>${escapeHtml(item.namaPekerjaan || "—")}</b>`;
-          row += `<td rowspan="${rowspan}">${jobCell}</td>`;
-          row += `<td rowspan="${rowspan}">${escapeHtml(item.pic || "—")}</td>`;
-          row += `<td rowspan="${rowspan}">${escapeHtml(item.jenisPengadaan || "—")}</td>`;
-          row += `<td rowspan="${rowspan}">${nomorPO ? escapeHtml(nomorPO) : "—"}</td>`;
-          row += `<td rowspan="${rowspan}">${dt ? escapeHtml(dt) : "—"}</td>`;
-          row += `<td rowspan="${rowspan}">${tanggalOnsite ? fmtDate(tanggalOnsite) : "—"}</td>`;
-        }
-        const def = MATERIAL_STATUS_DEF[m.statusKey];
-        row += `<td>${escapeHtml(m.deskripsi || "—")}</td>`;
-        row += `<td>${escapeHtml(m.brand || "—")}</td>`;
-        row += `<td class="num">${m.qtyPesan != null && m.qtyPesan !== "" ? m.qtyPesan : "—"}</td>`;
-        row += `<td class="num">${m.qtyDiterima != null && m.qtyDiterima !== "" ? m.qtyDiterima : "—"}</td>`;
-        row += `<td><span class="materialStatusBadge" style="color:${def.color};background:${def.bg};">${def.label}</span></td>`;
-        row += `<td class="noteCell">${escapeHtml(m.catatan || "")}</td>`;
-        row += `</tr>`;
-        html += row;
+        html += buildMaterialRowHtml(m, rowNo, item.pic, rowspan, idx === 0)
+          .replace('<tr class="trackDataRow">', `<tr class="trackDataRow"${rowDataAttr}${rowStyle}>`);
       });
-    });
+    }
+
     // Pekerjaan Jasa terkait: equipment tag sama, jenis pengadaannya Jasa
     // murni (All in sudah tercakup di sisi material). Hanya relevan untuk
-    // grup ber-tag asli — grup fallback (nama pekerjaan) tidak punya tag
-    // untuk dicocokkan.
+    // grup ber-tag asli — grup fallback (tanpa tag) tidak punya tag untuk
+    // dicocokkan.
     if(g.tagged){
       const relatedJasa = allItems.filter(i => (i.equipmentTag || "").trim().toLowerCase() === g.tag.toLowerCase() && i.jenisPengadaan === "Jasa");
       if(relatedJasa.length > 0){
-        const rowStyle = collapsed ? ' style="display:none;"' : "";
-        const rowDataAttr = interactive ? ` data-group="${escapeHtml(g.key)}"` : "";
         const sep = interactive ? "<br>" : "; ";
         const list = relatedJasa.map(i => {
           const label = `${escapeHtml(i.namaPekerjaan || "—")} (PIC: ${escapeHtml(i.pic || "—")}, ${getItemStatus(i).label})`;
@@ -3682,7 +3729,7 @@ function buildTrackingRowsHtml(entries, opts){
             ? `<span class="trackJasaItem" onclick='window.switchView("list");window.openEditModal(${JSON.stringify(i.id)})'>${label}</span>`
             : label;
         }).join(sep);
-        html += `<tr class="trackJasaRow"${rowDataAttr}${rowStyle}><td colspan="13"><b>Pekerjaan Jasa terkait (Equipment Tag sama):</b> ${list}</td></tr>`;
+        html += `<tr class="trackJasaRow"${rowDataAttr}${rowStyle}><td colspan="${TRACK_COLSPAN}"><b>Pekerjaan Jasa terkait (Equipment Tag sama):</b> ${list}</td></tr>`;
       }
     }
   });
@@ -3694,13 +3741,11 @@ window.toggleTrackGroup = function(key){
   else trackCollapsedGroups.add(key);
   window.renderTrackingMaterial();
 };
-window.expandAllTrackGroups = function(){
-  trackCollapsedGroups.clear();
-  window.renderTrackingMaterial();
-};
-window.collapseAllTrackGroups = function(){
+window.toggleAllTrackGroups = function(){
   const { entries } = getFilteredTrackingEntries();
-  entries.forEach(g => trackCollapsedGroups.add(g.key));
+  const allCollapsed = entries.length > 0 && entries.every(g => trackCollapsedGroups.has(g.key));
+  if(allCollapsed) trackCollapsedGroups.clear();
+  else entries.forEach(g => trackCollapsedGroups.add(g.key));
   window.renderTrackingMaterial();
 };
 
@@ -3708,6 +3753,13 @@ window.renderTrackingMaterial = function(){
   const container = document.getElementById("trackingGroupsContainer");
   if(!container) return;
   const { entries, kw } = getFilteredTrackingEntries();
+
+  const toggleBtn = document.getElementById("btnToggleTrackCollapse");
+  if(toggleBtn){
+    const allCollapsed = entries.length > 0 && entries.every(g => trackCollapsedGroups.has(g.key));
+    toggleBtn.textContent = allCollapsed ? "Expand" : "Collapse";
+    toggleBtn.disabled = entries.length === 0;
+  }
 
   if(entries.length === 0){
     container.innerHTML = `<div class="emptyState"><div class="big">—</div>${kw ? "Tidak ada yang cocok dengan pencarian." : "Belum ada Daftar Material yang diisi di pekerjaan mana pun."}</div>`;
@@ -3782,7 +3834,9 @@ window.exportTrackingMaterialPdf = function(){
   td.num, th.num{ text-align:right; font-family:'Courier New',monospace; }
   tr.trackGroupHeaderRow td{ background:#1C2530; color:#fff; font-size:11.5px; font-weight:700; padding:7px 8px; }
   .trackGroupCount{ font-weight:400; font-size:9.5px; color:#C9D1DB; margin-left:8px; }
-  tr.trackJobFirstRow td{ border-top:2px solid #999; }
+  tr.trackJobSubRow td{ background:#EDEFF3; font-size:9.5px; font-weight:700; padding:6px 8px; }
+  .metaBit{ font-weight:400; color:#5B6472; margin-left:12px; }
+  .metaBit b{ font-weight:700; color:#1C2530; }
   tr.trackJasaRow td{ background:#FAFAF8; font-size:9.5px; }
   .noteCell{ white-space:pre-wrap; color:#5B6472; }
   thead{ display: table-header-group; }
