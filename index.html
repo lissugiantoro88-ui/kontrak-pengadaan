@@ -592,7 +592,7 @@
     border:1px solid var(--line);border-radius:8px;padding:10px 12px 12px;
     margin-bottom:10px;background:#FAFAF8;
   }
-  .materialRowGrid{display:grid;grid-template-columns:2fr 1.3fr .8fr .8fr auto;gap:8px;align-items:end;}
+  .materialRowGrid{display:grid;grid-template-columns:1.8fr 1.1fr .7fr .7fr .8fr .9fr auto;gap:8px;align-items:end;}
   .materialRowGrid .field{margin-bottom:0;}
   .materialRowGrid label{display:block;font-size:11px;color:var(--ink-soft);margin-bottom:3px;}
   .materialRowGrid input{
@@ -2121,7 +2121,7 @@ window.onDisiplinChange = function(){
 // dibaca ulang dari DOM tiap simpan) supaya add/remove/re-render baris
 // tidak kehilangan input yang sudah diisi user.
 // ---------------------------------------------------------------------
-let materialRowsState = []; // [{id, deskripsi, brand, qtyPesan, qtyDiterima, catatan, noteOpen}]
+let materialRowsState = []; // [{id, deskripsi, brand, qtyPesan, qtyDiterima, dt, tanggalOnsite, catatan, noteOpen}]
 let materialRowSeq = 0;
 let materialReadOnly = false; // diset oleh setFieldPermissions()
 
@@ -2154,13 +2154,15 @@ function materialRowsFromItem(item){
     brand: m.brand || "",
     qtyPesan: m.qtyPesan != null ? String(m.qtyPesan) : "",
     qtyDiterima: m.qtyDiterima != null ? String(m.qtyDiterima) : "",
+    dt: m.dt || "",
+    tanggalOnsite: m.tanggalOnsite || "",
     catatan: m.catatan || "",
     noteOpen: false
   }));
 }
 
 window.addMaterialRow = function(){
-  materialRowsState.push({ id: ++materialRowSeq, deskripsi:"", brand:"", qtyPesan:"", qtyDiterima:"", catatan:"", noteOpen:false });
+  materialRowsState.push({ id: ++materialRowSeq, deskripsi:"", brand:"", qtyPesan:"", qtyDiterima:"", dt:"", tanggalOnsite:"", catatan:"", noteOpen:false });
   renderMaterialRows();
 };
 
@@ -2214,10 +2216,14 @@ function refreshMaterialStatusBadges(){
       const el = document.getElementById(fid);
       if(el) el.disabled = materialReadOnly || poTerbit;
     });
-    // Qty Diterima cuma relevan (dan baru boleh diisi) begitu PO terbit —
-    // sebelum itu belum ada yang bisa "diterima".
-    const qtyDiterimaWrap = document.getElementById(`matQtyDiterimaWrap_${row.id}`);
-    if(qtyDiterimaWrap) qtyDiterimaWrap.style.display = poTerbit ? "block" : "none";
+    // Qty Diterima, DT, & Tgl Onsite cuma relevan (dan baru boleh diisi)
+    // begitu PO terbit — sebelum itu belum ada yang bisa "diterima". Tiap
+    // baris material punya DT/Tgl Onsite masing2 karena kedatangannya bisa
+    // berbeda2 walau satu PO yang sama.
+    ["matQtyDiterimaWrap_", "matDtWrap_", "matTglOnsiteWrap_"].forEach(prefix => {
+      const wrap = document.getElementById(`${prefix}${row.id}`);
+      if(wrap) wrap.style.display = poTerbit ? "block" : "none";
+    });
   });
 }
 
@@ -2257,6 +2263,16 @@ function renderMaterialRows(){
               <input type="number" id="matQtyDiterima_${row.id}" min="0" step="any" value="${escapeHtml(row.qtyDiterima)}"
                 oninput="window.onMaterialFieldInput(${row.id},'qtyDiterima',this.value)" ${readOnly ? "disabled" : ""}>
             </div>
+            <div class="field" id="matDtWrap_${row.id}" style="display:${poTerbit ? "block" : "none"};">
+              <label>DT</label>
+              <input type="text" id="matDt_${row.id}" value="${escapeHtml(row.dt)}" placeholder="mis. DT-045"
+                oninput="window.onMaterialFieldInput(${row.id},'dt',this.value)" ${readOnly ? "disabled" : ""}>
+            </div>
+            <div class="field" id="matTglOnsiteWrap_${row.id}" style="display:${poTerbit ? "block" : "none"};">
+              <label>Tgl Onsite</label>
+              <input type="date" id="matTglOnsite_${row.id}" value="${escapeHtml(row.tanggalOnsite)}"
+                oninput="window.onMaterialFieldInput(${row.id},'tanggalOnsite',this.value)" ${readOnly ? "disabled" : ""}>
+            </div>
             <button type="button" class="materialRemoveBtn" title="Hapus material ini" onclick="window.removeMaterialRow(${row.id})" ${readOnly ? "disabled" : ""}>✕</button>
           </div>
           <div class="materialStatusRow">
@@ -2288,6 +2304,8 @@ function getMaterialListFromState(){
       brand: r.brand.trim(),
       qtyPesan: r.qtyPesan === "" ? null : (parseFloat(r.qtyPesan) || 0),
       qtyDiterima: r.qtyDiterima === "" ? null : (parseFloat(r.qtyDiterima) || 0),
+      dt: (r.dt || "").trim(),
+      tanggalOnsite: r.tanggalOnsite || "",
       catatan: r.catatan.trim()
     }));
 }
@@ -3580,15 +3598,14 @@ function buildTrackingGroups(){
       }
       return { ...m, statusKey };
     });
-    // No. PO / DT / Tanggal Onsite hidup di tahap Kontrak/PO (stageDetails),
-    // bukan di Daftar Material itu sendiri — ditarik sekali per pekerjaan
-    // (berlaku untuk semua baris material di pekerjaan itu), bukan per baris.
+    // No. PO hidup di tahap Kontrak/PO (stageDetails) — tunggal per pekerjaan.
+    // DT & Tanggal Onsite sebaliknya melekat di TIAP baris material sendiri
+    // (materialsWithStatus, dari materialList) karena kedatangannya bisa
+    // beda2 walau satu PO yang sama.
     const kontrakDetail = (item.stageDetails && item.stageDetails.kontrakPO) || {};
     groups.get(key).pekerjaanList.push({
       item, materials: materialsWithStatus,
-      nomorPO: kontrakDetail.nomorPO || "",
-      dt: kontrakDetail.dt || "",
-      tanggalOnsite: kontrakDetail.tanggalOnsite || ""
+      nomorPO: kontrakDetail.nomorPO || ""
     });
   });
   return groups;
@@ -3654,10 +3671,10 @@ function buildMaterialRowHtml(m, rowNo, job, rowspan, isFirstOfJob){
   row += `<td>${escapeHtml(m.brand || "—")}</td>`;
   row += `<td class="num">${m.qtyPesan != null && m.qtyPesan !== "" ? m.qtyPesan : "—"}</td>`;
   row += `<td class="num">${m.qtyDiterima != null && m.qtyDiterima !== "" ? m.qtyDiterima : "—"}</td>`;
-  if(isFirstOfJob){
-    row += `<td rowspan="${rowspan}">${job.dt ? escapeHtml(job.dt) : "—"}</td>`;
-    row += `<td rowspan="${rowspan}">${job.tanggalOnsite ? fmtDate(job.tanggalOnsite) : "—"}</td>`;
-  }
+  // DT & Tgl Onsite MELEKAT DI TIAP BARIS MATERIAL (bukan rowspan per
+  // pekerjaan) — kedatangan tiap item material bisa beda2 walau satu PO.
+  row += `<td>${m.dt ? escapeHtml(m.dt) : "—"}</td>`;
+  row += `<td>${m.tanggalOnsite ? fmtDate(m.tanggalOnsite) : "—"}</td>`;
   row += `<td><span class="materialStatusBadge" style="color:${def.color};background:${def.bg};">${def.label}</span></td>`;
   row += `<td class="noteCell">${escapeHtml(m.catatan || "")}</td>`;
   if(isFirstOfJob) row += `<td rowspan="${rowspan}">${escapeHtml(job.pic || "—")}</td>`;
@@ -3685,7 +3702,7 @@ function buildTrackingRowsHtml(entries, opts){
           <td colspan="${TRACK_COLSPAN}">${chevron}🏷️ ${escapeHtml(g.tag)}<span class="trackGroupCount">— ${g.pekerjaanList.length} pekerjaan · ${totalMaterials} baris material</span></td>
         </tr>
       `;
-      g.pekerjaanList.forEach(({ item, materials, nomorPO, dt, tanggalOnsite }) => {
+      g.pekerjaanList.forEach(({ item, materials, nomorPO }) => {
         // Sub-header per pekerjaan juga bisa di-collapse sendiri, terpisah
         // dari collapse di level Equipment Tag — supaya tiap PO di dalam
         // satu tag bisa dilihat/ditutup satu per satu.
@@ -3700,14 +3717,14 @@ function buildTrackingRowsHtml(entries, opts){
         const rowspan = materials.length;
         materials.forEach((m, idx) => {
           rowNo++;
-          html += buildMaterialRowHtml(m, rowNo, { pic: item.pic, dt, tanggalOnsite }, rowspan, idx === 0)
+          html += buildMaterialRowHtml(m, rowNo, { pic: item.pic }, rowspan, idx === 0)
             .replace('<tr class="trackDataRow">', `<tr class="trackDataRow"${rowDataAttr}${dataRowStyle}>`);
         });
       });
     } else {
       // Grup tanpa tag = tepat 1 pekerjaan. Header + sub-header digabung
       // jadi satu baris supaya nama pekerjaan tidak tertulis dua kali.
-      const { item, materials, nomorPO, dt, tanggalOnsite } = g.pekerjaanList[0];
+      const { item, materials, nomorPO } = g.pekerjaanList[0];
       const jobCell = interactive
         ? `<span class="trackPekerjaanLink" onclick='event.stopPropagation();window.switchView("list");window.openEditModal(${JSON.stringify(item.id)})'>${escapeHtml(item.namaPekerjaan || "—")}</span>`
         : `<b>${escapeHtml(item.namaPekerjaan || "—")}</b>`;
@@ -3719,7 +3736,7 @@ function buildTrackingRowsHtml(entries, opts){
       const rowspan = materials.length;
       materials.forEach((m, idx) => {
         rowNo++;
-        html += buildMaterialRowHtml(m, rowNo, { pic: item.pic, dt, tanggalOnsite }, rowspan, idx === 0)
+        html += buildMaterialRowHtml(m, rowNo, { pic: item.pic }, rowspan, idx === 0)
           .replace('<tr class="trackDataRow">', `<tr class="trackDataRow"${rowDataAttr}${groupRowStyle}>`);
       });
     }
@@ -4941,7 +4958,8 @@ window.printSingleItem = function(){
   const MATERIAL_STATUS_LABEL = { direncanakan:"Direncanakan", belum:"Belum Datang", sebagian:"Sebagian", lengkap:"Lengkap" };
   const poTerbitLive = isMaterialPOTerbit();
   const materialList = materialRowsState.map(r => ({
-    deskripsi: r.deskripsi, brand: r.brand, qtyPesan: r.qtyPesan, qtyDiterima: r.qtyDiterima, catatan: r.catatan
+    deskripsi: r.deskripsi, brand: r.brand, qtyPesan: r.qtyPesan, qtyDiterima: r.qtyDiterima,
+    dt: r.dt, tanggalOnsite: r.tanggalOnsite, catatan: r.catatan
   })).filter(m => m.deskripsi.trim());
   const materialRowsHtml = materialList.map(m => {
     const statusKey = computeMaterialStatusKey(m, poTerbitLive);
@@ -4951,6 +4969,8 @@ window.printSingleItem = function(){
         <td>${escapeHtml(m.brand || "—")}</td>
         <td class="num">${m.qtyPesan != null && m.qtyPesan !== "" ? m.qtyPesan : "—"}</td>
         <td class="num">${m.qtyDiterima != null && m.qtyDiterima !== "" ? m.qtyDiterima : "—"}</td>
+        <td>${m.dt ? escapeHtml(m.dt) : "—"}</td>
+        <td>${m.tanggalOnsite ? fmtDate(m.tanggalOnsite) : "—"}</td>
         <td><span style="color:${MATERIAL_STATUS_HEX[statusKey]};font-weight:700;">${MATERIAL_STATUS_LABEL[statusKey]}</span></td>
         <td class="noteCell" style="font-size:10.5px;color:#5B6472;">${escapeHtml(m.catatan || "")}</td>
       </tr>
@@ -5024,7 +5044,7 @@ window.printSingleItem = function(){
   ${materialList.length ? `
   <h2>Daftar Material</h2>
   <table>
-    <thead><tr><th>Deskripsi Material</th><th>Manufacture/Brand</th><th class="num">Qty Pesan</th><th class="num">Qty Diterima</th><th>Status</th><th>Catatan</th></tr></thead>
+    <thead><tr><th>Deskripsi Material</th><th>Manufacture/Brand</th><th class="num">Qty Pesan</th><th class="num">Qty Diterima</th><th>DT</th><th>Tgl Onsite</th><th>Status</th><th>Catatan</th></tr></thead>
     <tbody>${materialRowsHtml}</tbody>
   </table>
   ` : ""}
