@@ -449,7 +449,7 @@
   tbody tr.rowOverdue{box-shadow:inset 3px 0 0 var(--red);}
   tbody tr:hover{background:#FAFBFC;}
   .jobname{font-weight:500;}
-  .jobname .recentBadge{
+  .recentBadge{
     font-size:10px;font-family:'IBM Plex Mono',monospace;font-weight:600;
     color:var(--accent);background:var(--accent-soft);
     padding:1px 7px;border-radius:8px;margin-left:8px;vertical-align:middle;
@@ -3609,8 +3609,36 @@ window.renderPORefTable = function(){
 let trackCollapsedGroups = new Set(); // key grup (Equipment Tag) yg sedang di-collapse (state UI, tidak persisten)
 let trackCollapsedJobs = new Set(); // item.id pekerjaan (di dalam grup ber-tag) yg sedang di-collapse
 
+// Urutan baris PEKERJAAN/PO di dalam satu grup (Equipment Tag) — 3 keranjang
+// urgensi, dari yang paling butuh perhatian:
+//  1. Sudah PO & ada info Tgl Onsite -> diurutkan tgl onsite TERDEKAT dulu
+//     (earliest across baris materialnya — kalau materialnya beda2 tanggal,
+//     yang paling dekat dipakai sebagai acuan urgensi pekerjaan itu).
+//  2. Sudah PO tapi TIDAK ADA satupun info DT/Tgl Onsite -> belum jelas
+//     kapan datang, perlu ditindaklanjuti tapi tidak bisa diranking waktu.
+//  3. Belum PO / status masih Direncanakan -> belum actionable dari sisi
+//     tracking kedatangan material.
+// Urutan ini SENGAJA TIDAK dipengaruhi kapan pekerjaan terakhir diupdate —
+// supaya tidak lompat-lompat posisi tiap kali ada yang mengedit. Sinyal
+// "ada update terbaru" ditunjukkan lewat badge relativeUpdateBadge() di
+// baris sub-header (lihat buildTrackingRowsHtml), bukan lewat reposisi.
+const TRACK_BUCKET_PO_ONSITE = 1;
+const TRACK_BUCKET_PO_NO_INFO = 2;
+const TRACK_BUCKET_BELUM_PO = 3;
+
+function computeJobUrgency(item, materials, poTerbit){
+  if(!poTerbit) return { bucket: TRACK_BUCKET_BELUM_PO, earliestOnsite: null };
+  const onsiteDates = materials
+    .map(m => m.tanggalOnsite)
+    .filter(Boolean)
+    .map(d => new Date(d).getTime())
+    .filter(ms => !isNaN(ms));
+  if(onsiteDates.length === 0) return { bucket: TRACK_BUCKET_PO_NO_INFO, earliestOnsite: null };
+  return { bucket: TRACK_BUCKET_PO_ONSITE, earliestOnsite: Math.min(...onsiteDates) };
+}
+
 function buildTrackingGroups(){
-  const groups = new Map(); // key -> { key, tag, tagged, pekerjaanList:[{item, materials, nomorPO, dt, tanggalOnsite}] }
+  const groups = new Map(); // key -> { key, tag, tagged, pekerjaanList:[{item, materials, nomorPO, bucket, earliestOnsite}], lastUpdatedMs }
   allItems.forEach(item => {
     const materialList = Array.isArray(item.materialList) ? item.materialList : [];
     if(materialList.length === 0) return; // tidak ada material sama sekali -> tidak relevan di sini
@@ -3636,10 +3664,27 @@ function buildTrackingGroups(){
     // (materialsWithStatus, dari materialList) karena kedatangannya bisa
     // beda2 walau satu PO yang sama.
     const kontrakDetail = (item.stageDetails && item.stageDetails.kontrakPO) || {};
+    const urgency = computeJobUrgency(item, materialsWithStatus, poTerbit);
     groups.get(key).pekerjaanList.push({
       item, materials: materialsWithStatus,
-      nomorPO: kontrakDetail.nomorPO || ""
+      nomorPO: kontrakDetail.nomorPO || "",
+      bucket: urgency.bucket,
+      earliestOnsite: urgency.earliestOnsite
     });
+  });
+
+  // Finalisasi tiap grup: urutkan pekerjaan di dalamnya by urgensi (stabil,
+  // tidak terpengaruh update), lalu hitung waktu update TERBARU di antara
+  // semua pekerjaan dalam grup itu (dipakai untuk urutan ANTAR tag di bawah).
+  groups.forEach(g => {
+    g.pekerjaanList.sort((a, b) => {
+      if(a.bucket !== b.bucket) return a.bucket - b.bucket;
+      if(a.bucket === TRACK_BUCKET_PO_ONSITE && a.earliestOnsite !== b.earliestOnsite){
+        return a.earliestOnsite - b.earliestOnsite; // tgl onsite terdekat dulu
+      }
+      return (a.item.namaPekerjaan || "").localeCompare(b.item.namaPekerjaan || ""); // tie-break stabil
+    });
+    g.lastUpdatedMs = g.pekerjaanList.reduce((max, p) => Math.max(max, tsMillis(p.item.updatedAt) || 0), 0);
   });
   return groups;
 }
@@ -3656,11 +3701,10 @@ function getFilteredTrackingEntries(){
       ));
     });
   }
-  // Grup ber-tag dulu (lebih dapat diandalkan), lalu grup fallback nama pekerjaan — masing2 alfabetis.
-  entries.sort((a, b) => {
-    if(a.tagged !== b.tagged) return a.tagged ? -1 : 1;
-    return a.tag.localeCompare(b.tag);
-  });
+  // Tag/grup dengan aktivitas TERBARU (pekerjaan di dalamnya baru saja
+  // diupdate) tampil paling atas — supaya planner langsung melihat tag mana
+  // yang baru ada pergerakan, tanpa perlu scan semua tag satu per satu.
+  entries.sort((a, b) => b.lastUpdatedMs - a.lastUpdatedMs);
   return { entries, kw };
 }
 
@@ -3748,7 +3792,10 @@ function buildTrackingRowsHtml(entries, opts){
         const jobCell = interactive
           ? `<span class="trackPekerjaanLink" onclick='event.stopPropagation();window.switchView("list");window.openEditModal(${JSON.stringify(item.id)})'>${escapeHtml(item.namaPekerjaan || "—")}</span>`
           : `<b>${escapeHtml(item.namaPekerjaan || "—")}</b>`;
-        html += `<tr class="trackJobSubRow"${rowDataAttr}${groupRowStyle}${jobOnclick}><td colspan="${TRACK_COLSPAN}">${jobChevron}<span class="trackJobNo">PO #${jobNo}/${g.pekerjaanList.length}</span>${jobCell}<span class="metaBit">No. PO: <b>${nomorPO ? escapeHtml(nomorPO) : "—"}</b></span></td></tr>`;
+        // Badge "baru diupdate" MURNI informasi — tidak ikut menentukan posisi
+        // baris ini (posisinya tetap dari urgensi bucket/tgl onsite di atas).
+        const updateBadge = interactive ? relativeUpdateBadge(item) : "";
+        html += `<tr class="trackJobSubRow"${rowDataAttr}${groupRowStyle}${jobOnclick}><td colspan="${TRACK_COLSPAN}">${jobChevron}<span class="trackJobNo">PO #${jobNo}/${g.pekerjaanList.length}</span>${jobCell}<span class="metaBit">No. PO: <b>${nomorPO ? escapeHtml(nomorPO) : "—"}</b></span>${updateBadge}</td></tr>`;
         const dataRowStyle = (groupCollapsed || jobCollapsed) ? ' style="display:none;"' : "";
         const rowspan = materials.length;
         materials.forEach((m, idx) => {
@@ -3764,9 +3811,10 @@ function buildTrackingRowsHtml(entries, opts){
       const jobCell = interactive
         ? `<span class="trackPekerjaanLink" onclick='event.stopPropagation();window.switchView("list");window.openEditModal(${JSON.stringify(item.id)})'>${escapeHtml(item.namaPekerjaan || "—")}</span>`
         : `<b>${escapeHtml(item.namaPekerjaan || "—")}</b>`;
+      const updateBadge = interactive ? relativeUpdateBadge(item) : "";
       html += `
         <tr class="trackGroupHeaderRow"${headerOnclick}>
-          <td colspan="${TRACK_COLSPAN}">${chevron}${jobCell}<span class="trackGroupCount" style="color:#C9D1DB;">(Tanpa Equipment Tag) — No. PO: ${nomorPO ? escapeHtml(nomorPO) : "—"}</span></td>
+          <td colspan="${TRACK_COLSPAN}">${chevron}${jobCell}<span class="trackGroupCount" style="color:#C9D1DB;">(Tanpa Equipment Tag) — No. PO: ${nomorPO ? escapeHtml(nomorPO) : "—"}</span>${updateBadge}</td>
         </tr>
       `;
       const rowspan = materials.length;
