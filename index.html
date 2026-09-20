@@ -2250,6 +2250,11 @@ function refreshMaterialStatusBadges(){
     const receiveWrap = document.getElementById(`matReceiveWrap_${row.id}`);
     if(receiveWrap) receiveWrap.style.display = poTerbit ? "grid" : "none";
   });
+  // "+ Tambah Material" ditutup begitu PO terbit — daftar material yang
+  // di-order sudah final saat PO keluar, jadi tidak boleh nambah baris baru
+  // lagi (baris yang sudah ada tetap bisa diisi Qty Diterima/DT/Tgl Onsite).
+  const addBtn = document.getElementById("btnAddMaterial");
+  if(addBtn) addBtn.style.display = (materialReadOnly || poTerbit) ? "none" : "inline-flex";
 }
 
 function renderMaterialRows(){
@@ -2319,7 +2324,7 @@ function renderMaterialRows(){
       `;
     }).join("");
   }
-  document.getElementById("btnAddMaterial").style.display = readOnly ? "none" : "inline-flex";
+  document.getElementById("btnAddMaterial").style.display = (readOnly || poTerbit) ? "none" : "inline-flex";
 }
 
 function getMaterialListFromState(){
