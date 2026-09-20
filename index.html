@@ -621,41 +621,33 @@
   }
   .materialEmptyHint{font-size:12.5px;color:var(--ink-soft);padding:6px 0 10px;}
 
-  /* ===== Tracking Material (tab lintas-pekerjaan) ===== */
-  .trackGroupCard{
-    border:1px solid var(--line);border-radius:10px;background:#fff;
-    margin-bottom:14px;overflow:hidden;
+  /* ===== Tracking Material (tab lintas-pekerjaan) — SATU tabel utuh,
+     lebar kolom konsisten lewat <colgroup>, grup Equipment Tag jadi baris
+     header (bisa expand/collapse), info pekerjaan pakai rowspan supaya
+     tidak berulang di tiap baris material. ===== */
+  table.trackBigTable{width:100%;border-collapse:collapse;font-size:12.5px;table-layout:fixed;}
+  table.trackBigTable th, table.trackBigTable td{
+    border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top;
+    overflow-wrap:break-word;
   }
-  .trackGroupHeader{
-    display:flex;align-items:center;gap:10px;padding:12px 16px;
-    background:#FAFAF8;border-bottom:1px solid var(--line);flex-wrap:wrap;
+  table.trackBigTable thead th{
+    background:#FAFAF8;color:var(--ink-soft);font-weight:600;font-size:10.5px;
+    text-transform:uppercase;letter-spacing:.03em;position:sticky;top:0;z-index:1;
   }
-  .trackGroupTag{
-    font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:13.5px;color:var(--accent);
-  }
-  .trackGroupTag.untagged{color:var(--ink-soft);font-family:inherit;font-weight:600;font-style:italic;}
-  .trackGroupCount{font-size:11.5px;color:var(--ink-soft);}
-  .trackPekerjaanBlock{padding:10px 16px;border-bottom:1px solid #F0F0EE;}
-  .trackPekerjaanBlock:last-child{border-bottom:none;}
-  .trackPekerjaanHead{
-    display:flex;align-items:center;justify-content:space-between;gap:10px;
-    margin-bottom:6px;flex-wrap:wrap;
-  }
-  .trackPekerjaanName{font-size:13px;font-weight:600;cursor:pointer;color:var(--ink);}
-  .trackPekerjaanName:hover{color:var(--accent);text-decoration:underline;}
-  .trackPekerjaanMeta{font-size:11px;color:var(--ink-soft);}
-  table.trackMaterialTable{width:100%;border-collapse:collapse;font-size:12px;margin-top:4px;}
-  table.trackMaterialTable th, table.trackMaterialTable td{
-    border-bottom:1px solid #F0F0EE;padding:5px 6px;text-align:left;
-  }
-  table.trackMaterialTable th{color:var(--ink-soft);font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;}
-  table.trackMaterialTable td.num{text-align:right;font-family:'IBM Plex Mono',monospace;}
-  .trackJasaBox{
-    margin-top:8px;padding:8px 10px;background:#FAFAF8;border-radius:6px;font-size:12px;
-  }
-  .trackJasaBox .lbl{font-size:10.5px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.03em;margin-bottom:4px;}
-  .trackJasaItem{cursor:pointer;padding:2px 0;}
+  table.trackBigTable td.num, table.trackBigTable th.num{text-align:right;font-family:'IBM Plex Mono',monospace;}
+  .trackGroupHeaderRow{background:#1C2530;cursor:pointer;user-select:none;}
+  .trackGroupHeaderRow td{background:#1C2530;color:#fff;border-color:#1C2530;font-size:13px;font-weight:600;padding:9px 10px;}
+  .trackGroupHeaderRow:hover td{background:#2A3646;}
+  .trackChevron{display:inline-block;margin-right:6px;transition:transform .15s;font-size:11px;}
+  .trackChevron.collapsed{transform:rotate(-90deg);}
+  .trackGroupCount{font-weight:400;font-size:11px;color:#C9D1DB;margin-left:6px;}
+  .trackJobFirstRow td{border-top:2px solid var(--accent-soft);}
+  .trackPekerjaanLink{cursor:pointer;font-weight:600;color:var(--ink);}
+  .trackPekerjaanLink:hover{color:var(--accent);text-decoration:underline;}
+  .trackJasaRow td{background:#FAFAF8;font-size:12px;}
+  .trackJasaItem{cursor:pointer;}
   .trackJasaItem:hover{color:var(--accent);text-decoration:underline;}
+  .noteCell{white-space:pre-wrap;}
   .progressSummary{
     display:flex;align-items:center;justify-content:space-between;
     background:var(--accent-soft);border-radius:8px;padding:10px 14px;margin-bottom:16px;
@@ -1267,6 +1259,8 @@
           <input type="text" id="trackSearchInput" placeholder="Cari nama material, brand, atau equipment tag.." oninput="window.renderTrackingMaterial()" style="padding:7px 10px;border:1px solid var(--line);border-radius:6px;font-size:13px;font-family:inherit;min-width:260px;">
         </div>
         <div style="display:flex;gap:8px;">
+          <button class="btn btn-ghost" onclick="window.expandAllTrackGroups()">Expand Semua</button>
+          <button class="btn btn-ghost" onclick="window.collapseAllTrackGroups()">Collapse Semua</button>
           <button class="btn btn-ghost" id="btnExportTrackingPdf" onclick="window.exportTrackingMaterialPdf()">Export PDF</button>
         </div>
       </div>
@@ -3550,15 +3544,17 @@ window.renderPORefTable = function(){
 // sini, bukan dibuatkan tab tandingan yang isinya cuma duplikat Daftar
 // Pekerjaan).
 // ---------------------------------------------------------------------
+let trackCollapsedGroups = new Set(); // key grup yg sedang di-collapse (state UI, tidak persisten)
+
 function buildTrackingGroups(){
-  const groups = new Map(); // key -> { tag, tagged, pekerjaanList:[{item, materials}] }
+  const groups = new Map(); // key -> { key, tag, tagged, pekerjaanList:[{item, materials, nomorPO, dt, tanggalOnsite}] }
   allItems.forEach(item => {
     const materialList = Array.isArray(item.materialList) ? item.materialList : [];
     if(materialList.length === 0) return; // tidak ada material sama sekali -> tidak relevan di sini
     const tag = (item.equipmentTag || "").trim();
     const key = tag ? `tag:${tag.toLowerCase()}` : `nama:${(item.namaPekerjaan || "").toLowerCase()}`;
     if(!groups.has(key)){
-      groups.set(key, { tag: tag || (item.namaPekerjaan || "(Tanpa Nama)"), tagged: !!tag, pekerjaanList: [] });
+      groups.set(key, { key, tag: tag || (item.namaPekerjaan || "(Tanpa Nama)"), tagged: !!tag, pekerjaanList: [] });
     }
     const poTerbit = !!(item.stages && item.stages.kontrakPO);
     const materialsWithStatus = materialList.map(m => {
@@ -3606,6 +3602,108 @@ function getFilteredTrackingEntries(){
   return { entries, kw };
 }
 
+const TRACK_COLGROUP_HTML = `
+  <colgroup>
+    <col style="width:3%"><col style="width:14%"><col style="width:8%"><col style="width:6%">
+    <col style="width:8%"><col style="width:6%"><col style="width:7%"><col style="width:15%">
+    <col style="width:9%"><col style="width:6%"><col style="width:6%"><col style="width:6%"><col style="width:6%">
+  </colgroup>
+`;
+const TRACK_HEADERS_HTML = `
+  <tr>
+    <th class="num">No</th><th>Pekerjaan</th><th>PIC</th><th>Jenis</th><th>No. PO</th><th>DT</th><th>Tgl Onsite</th>
+    <th>Deskripsi Material</th><th>Brand</th><th class="num">Qty Pesan</th><th class="num">Qty Diterima</th><th>Status</th><th>Catatan</th>
+  </tr>
+`;
+
+// Satu builder dipakai BERSAMA oleh tampilan layar (interaktif, bisa
+// expand/collapse) dan export PDF (statis, selalu tampil penuh) — supaya
+// keduanya selalu identik strukturnya, tidak ada risiko "beda di layar vs
+// di PDF" seperti sebelumnya.
+function buildTrackingRowsHtml(entries, opts){
+  opts = opts || {};
+  const interactive = !!opts.interactive;
+  const forceExpand = !!opts.forceExpandAll;
+  let html = "";
+  entries.forEach(g => {
+    const totalMaterials = g.pekerjaanList.reduce((n, p) => n + p.materials.length, 0);
+    const collapsed = interactive && !forceExpand && trackCollapsedGroups.has(g.key);
+    const headerOnclick = interactive ? ` onclick='window.toggleTrackGroup(${JSON.stringify(g.key)})'` : "";
+    const chevron = interactive ? `<span class="trackChevron ${collapsed ? "collapsed" : ""}">▾</span>` : "";
+    html += `
+      <tr class="trackGroupHeaderRow"${headerOnclick}>
+        <td colspan="13">${chevron}${g.tagged ? "🏷️ " : ""}${escapeHtml(g.tag)}<span class="trackGroupCount">— ${g.pekerjaanList.length} pekerjaan · ${totalMaterials} baris material</span></td>
+      </tr>
+    `;
+    let rowNo = 0;
+    g.pekerjaanList.forEach(({ item, materials, nomorPO, dt, tanggalOnsite }) => {
+      const rowspan = materials.length;
+      materials.forEach((m, idx) => {
+        rowNo++;
+        const rowStyle = collapsed ? ' style="display:none;"' : "";
+        const rowDataAttr = interactive ? ` data-group="${escapeHtml(g.key)}"` : "";
+        const firstCls = idx === 0 ? " trackJobFirstRow" : "";
+        let row = `<tr class="trackDataRow${firstCls}"${rowDataAttr}${rowStyle}><td class="num">${rowNo}</td>`;
+        if(idx === 0){
+          const jobCell = interactive
+            ? `<span class="trackPekerjaanLink" onclick='window.switchView("list");window.openEditModal(${JSON.stringify(item.id)})'>${escapeHtml(item.namaPekerjaan || "—")}</span>`
+            : `<b>${escapeHtml(item.namaPekerjaan || "—")}</b>`;
+          row += `<td rowspan="${rowspan}">${jobCell}</td>`;
+          row += `<td rowspan="${rowspan}">${escapeHtml(item.pic || "—")}</td>`;
+          row += `<td rowspan="${rowspan}">${escapeHtml(item.jenisPengadaan || "—")}</td>`;
+          row += `<td rowspan="${rowspan}">${nomorPO ? escapeHtml(nomorPO) : "—"}</td>`;
+          row += `<td rowspan="${rowspan}">${dt ? escapeHtml(dt) : "—"}</td>`;
+          row += `<td rowspan="${rowspan}">${tanggalOnsite ? fmtDate(tanggalOnsite) : "—"}</td>`;
+        }
+        const def = MATERIAL_STATUS_DEF[m.statusKey];
+        row += `<td>${escapeHtml(m.deskripsi || "—")}</td>`;
+        row += `<td>${escapeHtml(m.brand || "—")}</td>`;
+        row += `<td class="num">${m.qtyPesan != null && m.qtyPesan !== "" ? m.qtyPesan : "—"}</td>`;
+        row += `<td class="num">${m.qtyDiterima != null && m.qtyDiterima !== "" ? m.qtyDiterima : "—"}</td>`;
+        row += `<td><span class="materialStatusBadge" style="color:${def.color};background:${def.bg};">${def.label}</span></td>`;
+        row += `<td class="noteCell">${escapeHtml(m.catatan || "")}</td>`;
+        row += `</tr>`;
+        html += row;
+      });
+    });
+    // Pekerjaan Jasa terkait: equipment tag sama, jenis pengadaannya Jasa
+    // murni (All in sudah tercakup di sisi material). Hanya relevan untuk
+    // grup ber-tag asli — grup fallback (nama pekerjaan) tidak punya tag
+    // untuk dicocokkan.
+    if(g.tagged){
+      const relatedJasa = allItems.filter(i => (i.equipmentTag || "").trim().toLowerCase() === g.tag.toLowerCase() && i.jenisPengadaan === "Jasa");
+      if(relatedJasa.length > 0){
+        const rowStyle = collapsed ? ' style="display:none;"' : "";
+        const rowDataAttr = interactive ? ` data-group="${escapeHtml(g.key)}"` : "";
+        const sep = interactive ? "<br>" : "; ";
+        const list = relatedJasa.map(i => {
+          const label = `${escapeHtml(i.namaPekerjaan || "—")} (PIC: ${escapeHtml(i.pic || "—")}, ${getItemStatus(i).label})`;
+          return interactive
+            ? `<span class="trackJasaItem" onclick='window.switchView("list");window.openEditModal(${JSON.stringify(i.id)})'>${label}</span>`
+            : label;
+        }).join(sep);
+        html += `<tr class="trackJasaRow"${rowDataAttr}${rowStyle}><td colspan="13"><b>Pekerjaan Jasa terkait (Equipment Tag sama):</b> ${list}</td></tr>`;
+      }
+    }
+  });
+  return html;
+}
+
+window.toggleTrackGroup = function(key){
+  if(trackCollapsedGroups.has(key)) trackCollapsedGroups.delete(key);
+  else trackCollapsedGroups.add(key);
+  window.renderTrackingMaterial();
+};
+window.expandAllTrackGroups = function(){
+  trackCollapsedGroups.clear();
+  window.renderTrackingMaterial();
+};
+window.collapseAllTrackGroups = function(){
+  const { entries } = getFilteredTrackingEntries();
+  entries.forEach(g => trackCollapsedGroups.add(g.key));
+  window.renderTrackingMaterial();
+};
+
 window.renderTrackingMaterial = function(){
   const container = document.getElementById("trackingGroupsContainer");
   if(!container) return;
@@ -3616,73 +3714,16 @@ window.renderTrackingMaterial = function(){
     return;
   }
 
-  container.innerHTML = entries.map(g => {
-    const totalMaterials = g.pekerjaanList.reduce((n, p) => n + p.materials.length, 0);
-    const pekerjaanRowsHtml = g.pekerjaanList.map(({ item, materials, nomorPO, dt, tanggalOnsite }) => {
-      const matRowsHtml = materials.map(m => {
-        const def = MATERIAL_STATUS_DEF[m.statusKey];
-        return `
-          <tr>
-            <td>${escapeHtml(m.deskripsi || "—")}</td>
-            <td>${escapeHtml(m.brand || "—")}</td>
-            <td class="num">${m.qtyPesan != null && m.qtyPesan !== "" ? m.qtyPesan : "—"}</td>
-            <td class="num">${m.qtyDiterima != null && m.qtyDiterima !== "" ? m.qtyDiterima : "—"}</td>
-            <td><span class="materialStatusBadge" style="color:${def.color};background:${def.bg};">${def.label}</span></td>
-            <td class="noteCell" style="font-size:11px;color:var(--ink-soft);">${escapeHtml(m.catatan || "")}</td>
-          </tr>
-        `;
-      }).join("");
-      const poMetaParts = [
-        `No. PO: ${nomorPO ? escapeHtml(nomorPO) : "—"}`,
-        dt ? `DT: ${escapeHtml(dt)}` : "",
-        tanggalOnsite ? `Tgl Onsite: ${fmtDate(tanggalOnsite)}` : ""
-      ].filter(Boolean).join(" · ");
-      return `
-        <div class="trackPekerjaanBlock">
-          <div class="trackPekerjaanHead">
-            <span class="trackPekerjaanName" onclick='window.switchView("list");window.openEditModal(${JSON.stringify(item.id)})'>${escapeHtml(item.namaPekerjaan || "—")} →</span>
-            <span class="trackPekerjaanMeta">PIC: ${escapeHtml(item.pic || "—")} · ${escapeHtml(item.jenisPengadaan || "—")} · ${getItemStatus(item).label} · ${poMetaParts}</span>
-          </div>
-          <table class="trackMaterialTable">
-            <thead><tr><th>Deskripsi Material</th><th>Brand</th><th class="num">Qty Pesan</th><th class="num">Qty Diterima</th><th>Status</th><th>Catatan</th></tr></thead>
-            <tbody>${matRowsHtml}</tbody>
-          </table>
-        </div>
-      `;
-    }).join("");
-
-    // Pekerjaan Jasa terkait: equipment tag sama, tapi jenis pengadaannya
-    // Jasa murni (All in sudah tercakup di sisi material di atas). Hanya
-    // relevan untuk grup ber-tag asli — grup fallback (nama pekerjaan) tidak
-    // punya tag untuk dicocokkan.
-    let jasaHtml = "";
-    if(g.tagged){
-      const relatedJasa = allItems.filter(i => (i.equipmentTag || "").trim().toLowerCase() === g.tag.toLowerCase() && i.jenisPengadaan === "Jasa");
-      if(relatedJasa.length > 0){
-        jasaHtml = `
-          <div class="trackJasaBox">
-            <div class="lbl">Pekerjaan Jasa terkait (Equipment Tag sama)</div>
-            ${relatedJasa.map(i => `
-              <div class="trackJasaItem" onclick='window.switchView("list");window.openEditModal(${JSON.stringify(i.id)})'>
-                ${escapeHtml(i.namaPekerjaan || "—")} — PIC: ${escapeHtml(i.pic || "—")} · ${getItemStatus(i).label}
-              </div>
-            `).join("")}
-          </div>
-        `;
-      }
-    }
-
-    return `
-      <div class="trackGroupCard">
-        <div class="trackGroupHeader">
-          <span class="trackGroupTag ${g.tagged ? "" : "untagged"}">${g.tagged ? "🏷️ " : ""}${escapeHtml(g.tag)}</span>
-          <span class="trackGroupCount">${g.pekerjaanList.length} pekerjaan · ${totalMaterials} baris material</span>
-        </div>
-        ${pekerjaanRowsHtml}
-        ${jasaHtml}
-      </div>
-    `;
-  }).join("");
+  const rowsHtml = buildTrackingRowsHtml(entries, { interactive: true, forceExpandAll: !!kw });
+  container.innerHTML = `
+    <div class="tableWrap">
+      <table class="trackBigTable">
+        ${TRACK_COLGROUP_HTML}
+        <thead>${TRACK_HEADERS_HTML}</thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>
+  `;
 };
 
 window.exportTrackingMaterialPdf = function(){
@@ -3692,15 +3733,16 @@ window.exportTrackingMaterialPdf = function(){
     return;
   }
 
-  const MATERIAL_STATUS_HEX = { direncanakan:"#6B4FA0", belum:"#B84A3E", sebagian:"#C77D2E", lengkap:"#3C7A5C" };
-
   const now = new Date();
   const generatedAt = now.toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' });
   const dateForFile = now.toISOString().slice(0, 10);
   let fileTitle = "Tracking-Material" + (kw ? `_cari-${kw.replace(/[^a-z0-9]+/gi,"-")}` : "") + "_" + dateForFile;
 
   // --- Ringkasan agregat: berapa equipment tag, pekerjaan, baris material,
-  // dan sebaran status kedatangan di seluruh grup yang tampil ini. ---
+  // dan sebaran status kedatangan di seluruh grup yang tampil ini. Export
+  // SELALU menampilkan seluruh baris penuh (bukan mengikuti collapse yang
+  // sedang aktif di layar) — laporan cetak harus komprehensif. ---
+  const MATERIAL_STATUS_HEX = { direncanakan:"#6B4FA0", belum:"#B84A3E", sebagian:"#C77D2E", lengkap:"#3C7A5C" };
   let taggedCount = 0, untaggedCount = 0, pekerjaanCount = 0, materialCount = 0;
   const statusCounts = { direncanakan:0, belum:0, sebagian:0, lengkap:0 };
   entries.forEach(g => {
@@ -3709,59 +3751,7 @@ window.exportTrackingMaterialPdf = function(){
     g.pekerjaanList.forEach(p => p.materials.forEach(m => { materialCount++; statusCounts[m.statusKey]++; }));
   });
 
-  const groupsHtml = entries.map(g => {
-    const pekerjaanBlocksHtml = g.pekerjaanList.map(({ item, materials, nomorPO, dt, tanggalOnsite }) => {
-      const matRowsHtml = materials.map(m => `
-        <tr>
-          <td>${escapeHtml(m.deskripsi || "—")}</td>
-          <td>${escapeHtml(m.brand || "—")}</td>
-          <td class="num">${m.qtyPesan != null && m.qtyPesan !== "" ? m.qtyPesan : "—"}</td>
-          <td class="num">${m.qtyDiterima != null && m.qtyDiterima !== "" ? m.qtyDiterima : "—"}</td>
-          <td><span class="statusText" style="color:${MATERIAL_STATUS_HEX[m.statusKey]}">${MATERIAL_STATUS_DEF[m.statusKey].label}</span></td>
-          <td class="noteCell">${escapeHtml(m.catatan || "")}</td>
-        </tr>
-      `).join("");
-      const poMetaParts = [
-        `No. PO: ${nomorPO ? escapeHtml(nomorPO) : "—"}`,
-        dt ? `DT: ${escapeHtml(dt)}` : "",
-        tanggalOnsite ? `Tgl Onsite: ${fmtDate(tanggalOnsite)}` : ""
-      ].filter(Boolean).join(" &nbsp;·&nbsp; ");
-      return `
-        <div class="pekerjaanBlock">
-          <div class="pekerjaanBlockHead">
-            <b>${escapeHtml(item.namaPekerjaan || "—")}</b>
-            <span class="metaline">PIC: ${escapeHtml(item.pic || "—")} &nbsp;·&nbsp; ${escapeHtml(item.jenisPengadaan || "—")} &nbsp;·&nbsp; Status: ${getItemStatus(item).label}</span>
-            <span class="metaline">${poMetaParts}</span>
-          </div>
-          <table>
-            <thead><tr><th>Deskripsi Material</th><th>Manufacture/Brand</th><th class="num">Qty Pesan</th><th class="num">Qty Diterima</th><th>Status</th><th>Catatan</th></tr></thead>
-            <tbody>${matRowsHtml}</tbody>
-          </table>
-        </div>
-      `;
-    }).join("");
-
-    let jasaHtml = "";
-    if(g.tagged){
-      const relatedJasa = allItems.filter(i => (i.equipmentTag || "").trim().toLowerCase() === g.tag.toLowerCase() && i.jenisPengadaan === "Jasa");
-      if(relatedJasa.length > 0){
-        jasaHtml = `
-          <div class="jasaBox">
-            <b>Pekerjaan Jasa terkait (Equipment Tag sama):</b>
-            ${relatedJasa.map(i => `${escapeHtml(i.namaPekerjaan || "—")} (PIC: ${escapeHtml(i.pic || "—")}, ${getItemStatus(i).label})`).join("; ")}
-          </div>
-        `;
-      }
-    }
-
-    return `
-      <div class="groupSection">
-        <h2>${g.tagged ? "🏷️ " : ""}${escapeHtml(g.tag)} <span class="groupCount">— ${g.pekerjaanList.length} pekerjaan, ${g.pekerjaanList.reduce((n,p)=>n+p.materials.length,0)} baris material</span></h2>
-        ${pekerjaanBlocksHtml}
-        ${jasaHtml}
-      </div>
-    `;
-  }).join("");
+  const rowsHtml = buildTrackingRowsHtml(entries, { interactive: false });
 
   const reportHtml = `
 <!DOCTYPE html>
@@ -3772,38 +3762,31 @@ window.exportTrackingMaterialPdf = function(){
 <style>
   @page {
     size: A4 landscape;
-    margin: 15mm;
+    margin: 12mm;
     @bottom-center { content: "Halaman " counter(page) " dari " counter(pages); font-size: 9px; color: #8A93A0; }
   }
   * { box-sizing: border-box; }
-  body{ font-family:'Arial','Helvetica',sans-serif; color:#1C2530; font-size:11px; margin:0; }
-  .reportHeader{ text-align:center; margin-bottom:18px; border-bottom:2px solid #1C2530; padding-bottom:10px; }
+  body{ font-family:'Arial','Helvetica',sans-serif; color:#1C2530; font-size:10.5px; margin:0; }
+  .reportHeader{ text-align:center; margin-bottom:16px; border-bottom:2px solid #1C2530; padding-bottom:10px; }
   .reportHeader .company{ font-size:15px; font-weight:700; letter-spacing:.03em; }
   .reportHeader .sub{ font-size:11px; color:#5B6472; margin-top:2px; }
   .reportHeader h1{ font-size:16px; margin:10px 0 4px; }
-  .metaRow{ display:flex; justify-content:space-between; font-size:10px; color:#5B6472; margin-bottom:20px; }
-  .summaryGrid{ display:flex; gap:14px; margin-bottom:20px; }
-  .summaryGrid .box{ flex:1; border:1px solid #ccc; padding:10px; text-align:center; border-radius:4px; }
-  .summaryGrid .box .n{ font-size:20px; font-weight:700; font-family:'Courier New',monospace; }
-  .summaryGrid .box .l{ font-size:9.5px; color:#5B6472; margin-top:2px; text-transform:uppercase; letter-spacing:.03em; }
-  .groupSection{ margin-bottom:22px; page-break-inside:avoid; }
-  h2{
-    font-size:13.5px; background:#1C2530; color:#fff; padding:7px 12px; border-radius:4px;
-    margin:0 0 10px;
-  }
-  .groupCount{ font-weight:400; font-size:10.5px; color:#C9D1DB; }
-  .pekerjaanBlock{ border:1px solid #ddd; border-radius:5px; padding:9px 12px; margin-bottom:10px; }
-  .pekerjaanBlockHead{ margin-bottom:6px; }
-  .pekerjaanBlockHead b{ font-size:12px; }
-  .metaline{ display:block; font-size:10px; color:#5B6472; margin-top:2px; }
-  table{ width:100%; border-collapse:collapse; margin-top:4px; }
-  th, td{ border:1px solid #ccc; padding:4px 7px; text-align:left; font-size:10.5px; }
-  th{ background:#F0F0EE; font-weight:700; }
+  .metaRow{ display:flex; justify-content:space-between; font-size:10px; color:#5B6472; margin-bottom:16px; }
+  .summaryGrid{ display:flex; gap:12px; margin-bottom:18px; }
+  .summaryGrid .box{ flex:1; border:1px solid #ccc; padding:9px; text-align:center; border-radius:4px; }
+  .summaryGrid .box .n{ font-size:19px; font-weight:700; font-family:'Courier New',monospace; }
+  .summaryGrid .box .l{ font-size:9px; color:#5B6472; margin-top:2px; text-transform:uppercase; letter-spacing:.03em; }
+  table{ width:100%; border-collapse:collapse; table-layout:fixed; }
+  th, td{ border:1px solid #ccc; padding:5px 6px; text-align:left; font-size:9.5px; vertical-align:top; overflow-wrap:break-word; }
+  thead th{ background:#F0F0EE; font-weight:700; font-size:9px; text-transform:uppercase; letter-spacing:.02em; }
   td.num, th.num{ text-align:right; font-family:'Courier New',monospace; }
-  .noteCell{ white-space:pre-wrap; font-size:9.5px; color:#5B6472; }
-  .statusText{ font-weight:700; }
-  .jasaBox{ margin-top:6px; padding:7px 10px; background:#FAFAF8; border-radius:4px; font-size:10.5px; }
-  table, tr, td, th { page-break-inside: avoid; }
+  tr.trackGroupHeaderRow td{ background:#1C2530; color:#fff; font-size:11.5px; font-weight:700; padding:7px 8px; }
+  .trackGroupCount{ font-weight:400; font-size:9.5px; color:#C9D1DB; margin-left:8px; }
+  tr.trackJobFirstRow td{ border-top:2px solid #999; }
+  tr.trackJasaRow td{ background:#FAFAF8; font-size:9.5px; }
+  .noteCell{ white-space:pre-wrap; color:#5B6472; }
+  thead{ display: table-header-group; }
+  tr{ page-break-inside: avoid; }
 </style>
 </head>
 <body>
@@ -3828,7 +3811,11 @@ window.exportTrackingMaterialPdf = function(){
     <div class="box" style="border-color:${MATERIAL_STATUS_HEX.lengkap};"><div class="n" style="color:${MATERIAL_STATUS_HEX.lengkap};">${statusCounts.lengkap}</div><div class="l">Lengkap</div></div>
   </div>
 
-  ${groupsHtml}
+  <table>
+    ${TRACK_COLGROUP_HTML}
+    <thead>${TRACK_HEADERS_HTML}</thead>
+    <tbody>${rowsHtml}</tbody>
+  </table>
 </body>
 </html>
   `;
