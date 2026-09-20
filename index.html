@@ -592,12 +592,26 @@
     border:1px solid var(--line);border-radius:8px;padding:10px 12px 12px;
     margin-bottom:10px;background:#FAFAF8;
   }
-  .materialRowGrid{display:grid;grid-template-columns:1.8fr 1.1fr .7fr .7fr .8fr .9fr auto;gap:8px;align-items:end;}
-  .materialRowGrid .field{margin-bottom:0;}
-  .materialRowGrid label{display:block;font-size:11px;color:var(--ink-soft);margin-bottom:3px;}
-  .materialRowGrid input{
+  /* Baris utama (Deskripsi/Brand/Qty Pesan) SELALU tampil, lebar penuh —
+     dipisah dari baris "info penerimaan" di bawahnya supaya tidak ada
+     kolom tersembunyi yang bikin field lain numpuk sempit ke kiri. */
+  .materialRowGridMain{display:grid;grid-template-columns:2.2fr 1.3fr .9fr auto;gap:8px;align-items:end;}
+  /* Baris info penerimaan (Qty Diterima/DT/Tgl Onsite) baru dirender saat
+     PO terbit, sebagai baris grid TERPISAH & lebar penuh sendiri — jadi
+     3 field ini dapat ruang lega, tidak berbagi track dengan baris utama. */
+  .materialRowGridReceive{
+    display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;align-items:end;
+    margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);
+  }
+  .materialRowGridMain .field, .materialRowGridReceive .field{margin-bottom:0;}
+  .materialRowGridMain label, .materialRowGridReceive label{display:block;font-size:11px;color:var(--ink-soft);margin-bottom:3px;}
+  .materialRowGridMain input, .materialRowGridReceive input{
     width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:5px;
     font-family:inherit;font-size:12.5px;background:#fff;box-sizing:border-box;
+  }
+  .materialReceiveLabel{
+    grid-column:1/-1;font-size:10.5px;font-weight:600;color:var(--ink-soft);
+    text-transform:uppercase;letter-spacing:.03em;margin-bottom:-2px;
   }
   .materialRemoveBtn{
     background:none;border:1px solid var(--line);border-radius:5px;color:var(--red);
@@ -859,7 +873,8 @@
   @media (max-width:720px){
     main{padding:16px;}
     .modalRow2{grid-template-columns:1fr;}
-    .materialRowGrid{grid-template-columns:1fr;}
+    .materialRowGridMain{grid-template-columns:1fr;}
+    .materialRowGridReceive{grid-template-columns:1fr;}
     header.topbar{padding:12px 16px;}
     .tableWrap{overflow-x:auto;}
     table{min-width:760px;}
@@ -2219,11 +2234,10 @@ function refreshMaterialStatusBadges(){
     // Qty Diterima, DT, & Tgl Onsite cuma relevan (dan baru boleh diisi)
     // begitu PO terbit — sebelum itu belum ada yang bisa "diterima". Tiap
     // baris material punya DT/Tgl Onsite masing2 karena kedatangannya bisa
-    // berbeda2 walau satu PO yang sama.
-    ["matQtyDiterimaWrap_", "matDtWrap_", "matTglOnsiteWrap_"].forEach(prefix => {
-      const wrap = document.getElementById(`${prefix}${row.id}`);
-      if(wrap) wrap.style.display = poTerbit ? "block" : "none";
-    });
+    // berbeda2 walau satu PO yang sama. Satu wrap untuk ketiganya sekaligus
+    // (baris grid terpisah), bukan 3 wrap kecil2 supaya lebar tiap field lega.
+    const receiveWrap = document.getElementById(`matReceiveWrap_${row.id}`);
+    if(receiveWrap) receiveWrap.style.display = poTerbit ? "grid" : "none";
   });
 }
 
@@ -2242,7 +2256,7 @@ function renderMaterialRows(){
       const lockOrder = readOnly || poTerbit; // Deskripsi/Brand/Qty Pesan: terkunci begitu PO terbit
       return `
         <div class="materialRow" data-row-id="${row.id}">
-          <div class="materialRowGrid">
+          <div class="materialRowGridMain">
             <div class="field">
               <label>Deskripsi Material</label>
               <input type="text" id="matDeskripsi_${row.id}" value="${escapeHtml(row.deskripsi)}" placeholder="mis. Bearing SKF 6205"
@@ -2258,22 +2272,25 @@ function renderMaterialRows(){
               <input type="number" id="matQtyPesan_${row.id}" min="0" step="any" value="${escapeHtml(row.qtyPesan)}"
                 oninput="window.onMaterialFieldInput(${row.id},'qtyPesan',this.value)" ${lockOrder ? "disabled" : ""}>
             </div>
-            <div class="field" id="matQtyDiterimaWrap_${row.id}" style="display:${poTerbit ? "block" : "none"};">
+            <button type="button" class="materialRemoveBtn" title="Hapus material ini" onclick="window.removeMaterialRow(${row.id})" ${readOnly ? "disabled" : ""}>✕</button>
+          </div>
+          <div class="materialRowGridReceive" id="matReceiveWrap_${row.id}" style="display:${poTerbit ? "grid" : "none"};">
+            <div class="materialReceiveLabel">📦 Info Penerimaan (setelah PO terbit)</div>
+            <div class="field">
               <label>Qty Diterima</label>
               <input type="number" id="matQtyDiterima_${row.id}" min="0" step="any" value="${escapeHtml(row.qtyDiterima)}"
                 oninput="window.onMaterialFieldInput(${row.id},'qtyDiterima',this.value)" ${readOnly ? "disabled" : ""}>
             </div>
-            <div class="field" id="matDtWrap_${row.id}" style="display:${poTerbit ? "block" : "none"};">
+            <div class="field">
               <label>DT</label>
               <input type="text" id="matDt_${row.id}" value="${escapeHtml(row.dt)}" placeholder="mis. DT-045"
                 oninput="window.onMaterialFieldInput(${row.id},'dt',this.value)" ${readOnly ? "disabled" : ""}>
             </div>
-            <div class="field" id="matTglOnsiteWrap_${row.id}" style="display:${poTerbit ? "block" : "none"};">
+            <div class="field">
               <label>Tgl Onsite</label>
               <input type="date" id="matTglOnsite_${row.id}" value="${escapeHtml(row.tanggalOnsite)}"
                 oninput="window.onMaterialFieldInput(${row.id},'tanggalOnsite',this.value)" ${readOnly ? "disabled" : ""}>
             </div>
-            <button type="button" class="materialRemoveBtn" title="Hapus material ini" onclick="window.removeMaterialRow(${row.id})" ${readOnly ? "disabled" : ""}>✕</button>
           </div>
           <div class="materialStatusRow">
             <span class="materialStatusBadge" id="materialStatusBadge_${row.id}" style="color:${def.color};background:${def.bg};">${def.label}</span>
