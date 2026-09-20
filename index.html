@@ -644,10 +644,13 @@
   .trackChevron{display:inline-block;margin-right:6px;transition:transform .15s;font-size:11px;}
   .trackChevron.collapsed{transform:rotate(-90deg);}
   .trackGroupCount{font-weight:400;font-size:11px;color:#C9D1DB;margin-left:6px;}
+  .trackJobSubRow{cursor:pointer;user-select:none;}
   .trackJobSubRow td{
     background:var(--accent-soft);border-color:var(--accent-soft);
     font-size:11.5px;font-weight:600;color:var(--ink);padding:7px 10px;
   }
+  .trackJobSubRow:hover td{background:#E4E9F5;}
+  .trackJobSubRow .trackChevron{font-size:10px;color:var(--ink-soft);}
   .trackJobSubRow .metaBit{font-weight:400;color:var(--ink-soft);margin-left:14px;}
   .trackJobSubRow .metaBit b{font-weight:600;color:var(--ink);}
   .trackPekerjaanLink{cursor:pointer;font-weight:700;color:var(--ink);}
@@ -1493,7 +1496,6 @@
 
       <div class="field">
         <label>Equipment Tag <span class="hint" style="display:inline;">(opsional)</span></label>
-        <div class="hint" style="margin-bottom:6px;">Tag number equipment terkait — bantu kelompokkan pekerjaan yang sama equipment-nya di tab Tracking Material, walau beda PO/planner. Boleh dikosongkan kalau belum tahu tag baku-nya.</div>
         <input type="text" id="fEquipmentTag" list="equipmentTagOptions" placeholder="mis. P-101A">
         <datalist id="equipmentTagOptions"></datalist>
       </div>
@@ -3553,7 +3555,8 @@ window.renderPORefTable = function(){
 // sini, bukan dibuatkan tab tandingan yang isinya cuma duplikat Daftar
 // Pekerjaan).
 // ---------------------------------------------------------------------
-let trackCollapsedGroups = new Set(); // key grup yg sedang di-collapse (state UI, tidak persisten)
+let trackCollapsedGroups = new Set(); // key grup (Equipment Tag) yg sedang di-collapse (state UI, tidak persisten)
+let trackCollapsedJobs = new Set(); // item.id pekerjaan (di dalam grup ber-tag) yg sedang di-collapse
 
 function buildTrackingGroups(){
   const groups = new Map(); // key -> { key, tag, tagged, pekerjaanList:[{item, materials, nomorPO, dt, tanggalOnsite}] }
@@ -3611,23 +3614,25 @@ function getFilteredTrackingEntries(){
   return { entries, kw };
 }
 
-// 8 kolom, fokus ke material (bukan ke pekerjaan): No lalu langsung
+// 10 kolom, fokus ke material (bukan ke pekerjaan): No lalu langsung
 // Deskripsi Material di paling kiri (poin fokus tracking), PIC di paling
-// kanan. Info pekerjaan (No.PO/DT/Tgl Onsite) TIDAK jadi kolom tersendiri —
-// ditulis sekali sebagai sub-header di atas baris2 material pekerjaan itu.
+// kanan. DT & Tgl Onsite tetap jadi kolom sendiri (bisa beda2 per pekerjaan
+// walau satu Equipment Tag), sedangkan No. PO — yang selalu tunggal per
+// pekerjaan — cukup ditulis sekali di baris sub-header pekerjaan.
 const TRACK_COLGROUP_HTML = `
   <colgroup>
-    <col style="width:4%"><col style="width:25%"><col style="width:12%"><col style="width:8%">
-    <col style="width:8%"><col style="width:10%"><col style="width:21%"><col style="width:12%">
+    <col style="width:3%"><col style="width:21%"><col style="width:10%"><col style="width:7%">
+    <col style="width:7%"><col style="width:8%"><col style="width:9%"><col style="width:9%">
+    <col style="width:16%"><col style="width:10%">
   </colgroup>
 `;
 const TRACK_HEADERS_HTML = `
   <tr>
     <th class="num">No</th><th>Deskripsi Material</th><th>Brand</th><th class="num">Qty Pesan</th>
-    <th class="num">Qty Diterima</th><th>Status</th><th>Catatan</th><th>PIC</th>
+    <th class="num">Qty Diterima</th><th>DT</th><th>Tgl Onsite</th><th>Status</th><th>Catatan</th><th>PIC</th>
   </tr>
 `;
-const TRACK_COLSPAN = 8;
+const TRACK_COLSPAN = 10;
 
 // Satu builder dipakai BERSAMA oleh tampilan layar (interaktif, bisa
 // expand/collapse) dan export PDF (statis, selalu tampil penuh) — supaya
@@ -3637,28 +3642,25 @@ const TRACK_COLSPAN = 8;
 // Struktur baris per grup:
 //  - Grup BER-TAG (>=1 pekerjaan berbagi Equipment Tag yang sama): 1 baris
 //    header gelap (nama tag, bisa expand/collapse), lalu per pekerjaan ada
-//    1 baris sub-header (nama pekerjaan + No.PO/DT/Tgl Onsite sekali saja),
-//    lalu baris2 material-nya.
+//    1 baris sub-header (nama pekerjaan + No. PO, JUGA bisa di-collapse
+//    sendiri) sebelum baris2 material-nya.
 //  - Grup TANPA TAG (selalu tepat 1 pekerjaan): header gelap & sub-header
 //    digabung jadi SATU baris saja (nama pekerjaan + info PO), supaya nama
 //    pekerjaan tidak tertulis dua kali.
-function buildJobMetaBits(nomorPO, dt, tanggalOnsite){
-  const bits = [];
-  bits.push(`<span class="metaBit">No. PO: <b>${nomorPO ? escapeHtml(nomorPO) : "—"}</b></span>`);
-  bits.push(`<span class="metaBit">DT: <b>${dt ? escapeHtml(dt) : "—"}</b></span>`);
-  bits.push(`<span class="metaBit">Tgl Onsite: <b>${tanggalOnsite ? fmtDate(tanggalOnsite) : "—"}</b></span>`);
-  return bits.join("");
-}
-function buildMaterialRowHtml(m, rowNo, pic, rowspan, isFirstOfJob){
+function buildMaterialRowHtml(m, rowNo, job, rowspan, isFirstOfJob){
   const def = MATERIAL_STATUS_DEF[m.statusKey];
   let row = `<tr class="trackDataRow"><td class="num">${rowNo}</td>`;
   row += `<td>${escapeHtml(m.deskripsi || "—")}</td>`;
   row += `<td>${escapeHtml(m.brand || "—")}</td>`;
   row += `<td class="num">${m.qtyPesan != null && m.qtyPesan !== "" ? m.qtyPesan : "—"}</td>`;
   row += `<td class="num">${m.qtyDiterima != null && m.qtyDiterima !== "" ? m.qtyDiterima : "—"}</td>`;
+  if(isFirstOfJob){
+    row += `<td rowspan="${rowspan}">${job.dt ? escapeHtml(job.dt) : "—"}</td>`;
+    row += `<td rowspan="${rowspan}">${job.tanggalOnsite ? fmtDate(job.tanggalOnsite) : "—"}</td>`;
+  }
   row += `<td><span class="materialStatusBadge" style="color:${def.color};background:${def.bg};">${def.label}</span></td>`;
   row += `<td class="noteCell">${escapeHtml(m.catatan || "")}</td>`;
-  if(isFirstOfJob) row += `<td rowspan="${rowspan}">${escapeHtml(pic || "—")}</td>`;
+  if(isFirstOfJob) row += `<td rowspan="${rowspan}">${escapeHtml(job.pic || "—")}</td>`;
   row += `</tr>`;
   return row;
 }
@@ -3669,10 +3671,10 @@ function buildTrackingRowsHtml(entries, opts){
   let html = "";
   entries.forEach(g => {
     const totalMaterials = g.pekerjaanList.reduce((n, p) => n + p.materials.length, 0);
-    const collapsed = interactive && !forceExpand && trackCollapsedGroups.has(g.key);
+    const groupCollapsed = interactive && !forceExpand && trackCollapsedGroups.has(g.key);
     const headerOnclick = interactive ? ` onclick='window.toggleTrackGroup(${JSON.stringify(g.key)})'` : "";
-    const chevron = interactive ? `<span class="trackChevron ${collapsed ? "collapsed" : ""}">▾</span>` : "";
-    const rowStyle = collapsed ? ' style="display:none;"' : "";
+    const chevron = interactive ? `<span class="trackChevron ${groupCollapsed ? "collapsed" : ""}">▾</span>` : "";
+    const groupRowStyle = groupCollapsed ? ' style="display:none;"' : "";
     const rowDataAttr = interactive ? ` data-group="${escapeHtml(g.key)}"` : "";
     let rowNo = 0;
 
@@ -3684,15 +3686,22 @@ function buildTrackingRowsHtml(entries, opts){
         </tr>
       `;
       g.pekerjaanList.forEach(({ item, materials, nomorPO, dt, tanggalOnsite }) => {
+        // Sub-header per pekerjaan juga bisa di-collapse sendiri, terpisah
+        // dari collapse di level Equipment Tag — supaya tiap PO di dalam
+        // satu tag bisa dilihat/ditutup satu per satu.
+        const jobCollapsed = interactive && !forceExpand && trackCollapsedJobs.has(item.id);
+        const jobOnclick = interactive ? ` onclick='window.toggleTrackJob(${JSON.stringify(item.id)})'` : "";
+        const jobChevron = interactive ? `<span class="trackChevron ${jobCollapsed ? "collapsed" : ""}">▾</span>` : "";
         const jobCell = interactive
-          ? `<span class="trackPekerjaanLink" onclick='window.switchView("list");window.openEditModal(${JSON.stringify(item.id)})'>${escapeHtml(item.namaPekerjaan || "—")}</span>`
+          ? `<span class="trackPekerjaanLink" onclick='event.stopPropagation();window.switchView("list");window.openEditModal(${JSON.stringify(item.id)})'>${escapeHtml(item.namaPekerjaan || "—")}</span>`
           : `<b>${escapeHtml(item.namaPekerjaan || "—")}</b>`;
-        html += `<tr class="trackJobSubRow"${rowDataAttr}${rowStyle}><td colspan="${TRACK_COLSPAN}">${jobCell}${buildJobMetaBits(nomorPO, dt, tanggalOnsite)}</td></tr>`;
+        html += `<tr class="trackJobSubRow"${rowDataAttr}${groupRowStyle}${jobOnclick}><td colspan="${TRACK_COLSPAN}">${jobChevron}${jobCell}<span class="metaBit">No. PO: <b>${nomorPO ? escapeHtml(nomorPO) : "—"}</b></span></td></tr>`;
+        const dataRowStyle = (groupCollapsed || jobCollapsed) ? ' style="display:none;"' : "";
         const rowspan = materials.length;
         materials.forEach((m, idx) => {
           rowNo++;
-          html += buildMaterialRowHtml(m, rowNo, item.pic, rowspan, idx === 0)
-            .replace('<tr class="trackDataRow">', `<tr class="trackDataRow"${rowDataAttr}${rowStyle}>`);
+          html += buildMaterialRowHtml(m, rowNo, { pic: item.pic, dt, tanggalOnsite }, rowspan, idx === 0)
+            .replace('<tr class="trackDataRow">', `<tr class="trackDataRow"${rowDataAttr}${dataRowStyle}>`);
         });
       });
     } else {
@@ -3700,18 +3709,18 @@ function buildTrackingRowsHtml(entries, opts){
       // jadi satu baris supaya nama pekerjaan tidak tertulis dua kali.
       const { item, materials, nomorPO, dt, tanggalOnsite } = g.pekerjaanList[0];
       const jobCell = interactive
-        ? `<span class="trackPekerjaanLink" onclick='window.switchView("list");window.openEditModal(${JSON.stringify(item.id)})'>${escapeHtml(item.namaPekerjaan || "—")}</span>`
+        ? `<span class="trackPekerjaanLink" onclick='event.stopPropagation();window.switchView("list");window.openEditModal(${JSON.stringify(item.id)})'>${escapeHtml(item.namaPekerjaan || "—")}</span>`
         : `<b>${escapeHtml(item.namaPekerjaan || "—")}</b>`;
       html += `
         <tr class="trackGroupHeaderRow"${headerOnclick}>
-          <td colspan="${TRACK_COLSPAN}">${chevron}${jobCell}<span class="trackGroupCount" style="color:#C9D1DB;">(Tanpa Equipment Tag)</span>${buildJobMetaBits(nomorPO, dt, tanggalOnsite).replace(/class="metaBit"/g, 'class="metaBit" style="color:#C9D1DB;"')}</td>
+          <td colspan="${TRACK_COLSPAN}">${chevron}${jobCell}<span class="trackGroupCount" style="color:#C9D1DB;">(Tanpa Equipment Tag) — No. PO: ${nomorPO ? escapeHtml(nomorPO) : "—"}</span></td>
         </tr>
       `;
       const rowspan = materials.length;
       materials.forEach((m, idx) => {
         rowNo++;
-        html += buildMaterialRowHtml(m, rowNo, item.pic, rowspan, idx === 0)
-          .replace('<tr class="trackDataRow">', `<tr class="trackDataRow"${rowDataAttr}${rowStyle}>`);
+        html += buildMaterialRowHtml(m, rowNo, { pic: item.pic, dt, tanggalOnsite }, rowspan, idx === 0)
+          .replace('<tr class="trackDataRow">', `<tr class="trackDataRow"${rowDataAttr}${groupRowStyle}>`);
       });
     }
 
@@ -3729,7 +3738,7 @@ function buildTrackingRowsHtml(entries, opts){
             ? `<span class="trackJasaItem" onclick='window.switchView("list");window.openEditModal(${JSON.stringify(i.id)})'>${label}</span>`
             : label;
         }).join(sep);
-        html += `<tr class="trackJasaRow"${rowDataAttr}${rowStyle}><td colspan="${TRACK_COLSPAN}"><b>Pekerjaan Jasa terkait (Equipment Tag sama):</b> ${list}</td></tr>`;
+        html += `<tr class="trackJasaRow"${rowDataAttr}${groupRowStyle}><td colspan="${TRACK_COLSPAN}"><b>Pekerjaan Jasa terkait (Equipment Tag sama):</b> ${list}</td></tr>`;
       }
     }
   });
@@ -3739,6 +3748,11 @@ function buildTrackingRowsHtml(entries, opts){
 window.toggleTrackGroup = function(key){
   if(trackCollapsedGroups.has(key)) trackCollapsedGroups.delete(key);
   else trackCollapsedGroups.add(key);
+  window.renderTrackingMaterial();
+};
+window.toggleTrackJob = function(itemId){
+  if(trackCollapsedJobs.has(itemId)) trackCollapsedJobs.delete(itemId);
+  else trackCollapsedJobs.add(itemId);
   window.renderTrackingMaterial();
 };
 window.toggleAllTrackGroups = function(){
@@ -3828,10 +3842,20 @@ window.exportTrackingMaterialPdf = function(){
   .summaryGrid .box{ flex:1; border:1px solid #ccc; padding:9px; text-align:center; border-radius:4px; }
   .summaryGrid .box .n{ font-size:19px; font-weight:700; font-family:'Courier New',monospace; }
   .summaryGrid .box .l{ font-size:9px; color:#5B6472; margin-top:2px; text-transform:uppercase; letter-spacing:.03em; }
-  table{ width:100%; border-collapse:collapse; table-layout:fixed; }
-  th, td{ border:1px solid #ccc; padding:5px 6px; text-align:left; font-size:9.5px; vertical-align:top; overflow-wrap:break-word; }
+  /* table-layout:auto (bukan fixed) supaya lebar tiap kolom menyesuaikan
+     konten terpanjangnya sendiri — kolom pendek (No, Qty, DT, Status, PIC)
+     jadi ringkas, tidak dipaksa selebar kolom teks bebas. col{width:auto}
+     menimpa lebar persen inline dari TRACK_COLGROUP_HTML (dipakai bersama
+     dgn layar) karena di PDF kita tidak mau lebar fixed itu. Deskripsi &
+     Catatan (teks bebas, bisa panjang) dibatasi max-width supaya tabel
+     tidak melebar tak terkendali di halaman cetak. */
+  table{ width:100%; border-collapse:collapse; table-layout:auto; }
+  col{ width:auto !important; }
+  th, td{ border:1px solid #ccc; padding:5px 6px; text-align:left; font-size:9.5px; vertical-align:top; overflow-wrap:break-word; word-break:break-word; }
+  th:nth-child(2), td:nth-child(2){ max-width:210px; } /* Deskripsi Material */
+  th:nth-child(9), td:nth-child(9){ max-width:230px; } /* Catatan */
   thead th{ background:#F0F0EE; font-weight:700; font-size:9px; text-transform:uppercase; letter-spacing:.02em; }
-  td.num, th.num{ text-align:right; font-family:'Courier New',monospace; }
+  td.num, th.num{ text-align:right; font-family:'Courier New',monospace; white-space:nowrap; }
   tr.trackGroupHeaderRow td{ background:#1C2530; color:#fff; font-size:11.5px; font-weight:700; padding:7px 8px; }
   .trackGroupCount{ font-weight:400; font-size:9.5px; color:#C9D1DB; margin-left:8px; }
   tr.trackJobSubRow td{ background:#EDEFF3; font-size:9.5px; font-weight:700; padding:6px 8px; }
