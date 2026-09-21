@@ -2097,6 +2097,16 @@ window.applyEmpowermentMode = function(){
   document.getElementById("checklistNormalWrap").style.display = isEmpowerment ? "none" : "block";
   document.getElementById("statusKhususWrap").style.display = isEmpowerment ? "none" : "block";
   document.getElementById("empowermentWrap").style.display = isEmpowerment ? "block" : "none";
+  // Daftar Material juga tidak relevan untuk Empowerment — bukan proses
+  // kontraktual normal (tidak ada PO/kontrak buat di-tracking qty & tanggal
+  // kedatangannya), treatmentnya cuma catatan WO. Data material lama (kalau
+  // ada, dari sebelum contractType diubah ke Empowerment) TIDAK dihapus,
+  // cuma disembunyikan — supaya tidak hilang kalau ternyata salah pilih.
+  const materialWrap = document.getElementById("materialListWrap");
+  if(materialWrap){
+    const jp = document.getElementById("fJenisPengadaan").value;
+    materialWrap.style.display = (!isEmpowerment && ["Material", "All in"].includes(jp)) ? "block" : "none";
+  }
 };
 
 window.onEmpowermentDoneChange = function(){
@@ -2115,7 +2125,10 @@ window.onJenisPengadaanChange = function(){
     if(showIfList.length) el.style.display = showIfList.includes(v) ? "block" : "none";
   });
   const materialWrap = document.getElementById("materialListWrap");
-  if(materialWrap) materialWrap.style.display = ["Material", "All in"].includes(v) ? "block" : "none";
+  if(materialWrap){
+    const isEmpowerment = document.getElementById("fContractType").value === "Empowerment";
+    materialWrap.style.display = (!isEmpowerment && ["Material", "All in"].includes(v)) ? "block" : "none";
+  }
 };
 window.onDisiplinChange = function(){
   const v = document.getElementById("fDisiplin").value;
@@ -2128,7 +2141,8 @@ window.onDisiplinChange = function(){
 // pernah diisi manual (konsisten dengan filosofi status di seluruh app):
 //   - "PO belum terbit" (checklist "Pembuatan Kontrak/Approval PO" BELUM
 //     dicentang)                                                 -> Direncanakan
-//   - PO sudah terbit, Qty Diterima = 0                           -> Belum Datang
+//   - PO sudah terbit, Qty Diterima = 0, ETA belum lewat/kosong   -> Menunggu
+//   - PO sudah terbit, Qty Diterima = 0, ETA sudah lewat          -> Terlambat
 //   - PO sudah terbit, 0 < Qty Diterima < Qty Pesan               -> Sebagian
 //   - Qty Diterima >= Qty Pesan (Qty Pesan > 0)                   -> Lengkap
 // "PO sudah terbit" diturunkan otomatis dari CHECKLIST tahap
@@ -2153,7 +2167,8 @@ let materialReadOnly = false; // diset oleh setFieldPermissions()
 
 const MATERIAL_STATUS_DEF = {
   direncanakan: { label:"Direncanakan", color:"#6B4FA0", bg:"#EFE9F7" },
-  belum:        { label:"Belum Datang", color:"var(--red)", bg:"var(--red-soft)" },
+  menunggu:     { label:"Menunggu",     color:"var(--accent)", bg:"var(--accent-soft)" },
+  terlambat:    { label:"Terlambat",    color:"var(--red)", bg:"var(--red-soft)" },
   sebagian:     { label:"Sebagian",     color:"var(--amber)", bg:"var(--amber-soft)" },
   lengkap:      { label:"Lengkap",      color:"var(--green)", bg:"var(--green-soft)" }
 };
@@ -2163,13 +2178,32 @@ function isMaterialPOTerbit(){
   return !!(cb && cb.checked);
 }
 
+// Status "belum ada yang diterima" DIPECAH jadi 2, bukan satu label generik
+// "Belum Datang" untuk semua kasus (itu terkesan menuduh padahal wajar kalau
+// ETA-nya masih di depan):
+//  - "Menunggu"  : PO terbit, belum ada Qty Diterima, TAPI ETA (Tgl Onsite)
+//                  belum lewat (atau belum diisi sama sekali) — masih wajar,
+//                  belum perlu dikhawatirkan.
+//  - "Terlambat" : PO terbit, belum ada Qty Diterima, DAN ETA sudah lewat
+//                  (hari ini atau sebelumnya) — baru ini yang benar2 perlu
+//                  ditindaklanjuti/red flag.
 function computeMaterialStatusKey(row, poTerbit){
   const qtyPesan = parseFloat(row.qtyPesan) || 0;
   const qtyDiterima = parseFloat(row.qtyDiterima) || 0;
   if(!poTerbit) return "direncanakan";
-  if(qtyDiterima <= 0) return "belum";
-  if(qtyPesan > 0 && qtyDiterima >= qtyPesan) return "lengkap";
-  return "sebagian";
+  if(qtyDiterima > 0){
+    if(qtyPesan > 0 && qtyDiterima >= qtyPesan) return "lengkap";
+    return "sebagian";
+  }
+  if(row.tanggalOnsite){
+    const onsiteMs = new Date(row.tanggalOnsite).getTime();
+    if(!isNaN(onsiteMs)){
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      if(onsiteMs <= todayStart.getTime()) return "terlambat";
+    }
+  }
+  return "menunggu";
 }
 
 function materialRowsFromItem(item){
@@ -3640,6 +3674,7 @@ function computeJobUrgency(item, materials, poTerbit){
 function buildTrackingGroups(){
   const groups = new Map(); // key -> { key, tag, tagged, pekerjaanList:[{item, materials, nomorPO, bucket, earliestOnsite}], lastUpdatedMs }
   allItems.forEach(item => {
+    if(item.contractType === "Empowerment") return; // bukan proses kontraktual, tidak perlu tracking material
     const materialList = Array.isArray(item.materialList) ? item.materialList : [];
     if(materialList.length === 0) return; // tidak ada material sama sekali -> tidak relevan di sini
     const tag = (item.equipmentTag || "").trim();
@@ -3648,17 +3683,10 @@ function buildTrackingGroups(){
       groups.set(key, { key, tag: tag || (item.namaPekerjaan || "(Tanpa Nama)"), tagged: !!tag, pekerjaanList: [] });
     }
     const poTerbit = !!(item.stages && item.stages.kontrakPO);
-    const materialsWithStatus = materialList.map(m => {
-      const qtyPesan = parseFloat(m.qtyPesan) || 0;
-      const qtyDiterima = parseFloat(m.qtyDiterima) || 0;
-      let statusKey = "direncanakan";
-      if(poTerbit){
-        if(qtyDiterima <= 0) statusKey = "belum";
-        else if(qtyPesan > 0 && qtyDiterima >= qtyPesan) statusKey = "lengkap";
-        else statusKey = "sebagian";
-      }
-      return { ...m, statusKey };
-    });
+    // Pakai computeMaterialStatusKey() yang sama dengan Daftar Material di
+    // modal — satu sumber logika status, supaya status yang tampil di sini
+    // dan di modal selalu konsisten (termasuk logika Menunggu/Terlambat).
+    const materialsWithStatus = materialList.map(m => ({ ...m, statusKey: computeMaterialStatusKey(m, poTerbit) }));
     // No. PO hidup di tahap Kontrak/PO (stageDetails) — tunggal per pekerjaan.
     // DT & Tanggal Onsite sebaliknya melekat di TIAP baris material sendiri
     // (materialsWithStatus, dari materialList) karena kedatangannya bisa
@@ -3909,9 +3937,9 @@ window.exportTrackingMaterialPdf = function(){
   // dan sebaran status kedatangan di seluruh grup yang tampil ini. Export
   // SELALU menampilkan seluruh baris penuh (bukan mengikuti collapse yang
   // sedang aktif di layar) — laporan cetak harus komprehensif. ---
-  const MATERIAL_STATUS_HEX = { direncanakan:"#6B4FA0", belum:"#B84A3E", sebagian:"#C77D2E", lengkap:"#3C7A5C" };
+  const MATERIAL_STATUS_HEX = { direncanakan:"#6B4FA0", menunggu:"#2B6CB0", terlambat:"#B84A3E", sebagian:"#C77D2E", lengkap:"#3C7A5C" };
   let taggedCount = 0, untaggedCount = 0, pekerjaanCount = 0, materialCount = 0;
-  const statusCounts = { direncanakan:0, belum:0, sebagian:0, lengkap:0 };
+  const statusCounts = { direncanakan:0, menunggu:0, terlambat:0, sebagian:0, lengkap:0 };
   entries.forEach(g => {
     if(g.tagged) taggedCount++; else untaggedCount++;
     pekerjaanCount += g.pekerjaanList.length;
@@ -3989,7 +4017,7 @@ window.exportTrackingMaterialPdf = function(){
     <div class="box"><div class="n">${untaggedCount}</div><div class="l">Grup Tanpa Tag</div></div>
     <div class="box"><div class="n">${pekerjaanCount}</div><div class="l">Pekerjaan Tercakup</div></div>
     <div class="box"><div class="n">${materialCount}</div><div class="l">Baris Material</div></div>
-    <div class="box" style="border-color:${MATERIAL_STATUS_HEX.belum};"><div class="n" style="color:${MATERIAL_STATUS_HEX.belum};">${statusCounts.belum}</div><div class="l">Belum Datang</div></div>
+    <div class="box" style="border-color:${MATERIAL_STATUS_HEX.terlambat};"><div class="n" style="color:${MATERIAL_STATUS_HEX.terlambat};">${statusCounts.terlambat}</div><div class="l">Terlambat</div></div>
     <div class="box" style="border-color:${MATERIAL_STATUS_HEX.lengkap};"><div class="n" style="color:${MATERIAL_STATUS_HEX.lengkap};">${statusCounts.lengkap}</div><div class="l">Lengkap</div></div>
   </div>
 
@@ -5041,8 +5069,8 @@ window.printSingleItem = function(){
   // + checklist checkbox saat ini), bukan snapshot tersimpan — supaya kalau
   // user baru saja centang/qty tapi belum tekan Simpan, hasil cetak tetap
   // sama persis dengan yang sedang terlihat di layar (bukan versi lama).
-  const MATERIAL_STATUS_HEX = { direncanakan:"#6B4FA0", belum:"#B84A3E", sebagian:"#C77D2E", lengkap:"#3C7A5C" };
-  const MATERIAL_STATUS_LABEL = { direncanakan:"Direncanakan", belum:"Belum Datang", sebagian:"Sebagian", lengkap:"Lengkap" };
+  const MATERIAL_STATUS_HEX = { direncanakan:"#6B4FA0", menunggu:"#2B6CB0", terlambat:"#B84A3E", sebagian:"#C77D2E", lengkap:"#3C7A5C" };
+  const MATERIAL_STATUS_LABEL = { direncanakan:"Direncanakan", menunggu:"Menunggu", terlambat:"Terlambat", sebagian:"Sebagian", lengkap:"Lengkap" };
   const poTerbitLive = isMaterialPOTerbit();
   const materialList = materialRowsState.map(r => ({
     deskripsi: r.deskripsi, brand: r.brand, qtyPesan: r.qtyPesan, qtyDiterima: r.qtyDiterima,
