@@ -5990,9 +5990,8 @@ window.openEditModal = function(id){
   document.getElementById("fNama").value = item.namaPekerjaan || "";
   document.getElementById("fEquipmentTag").value = item.equipmentTag || "";
 
-  const kategoriDikenal = ["Maintenance","OYSP","Take Over","Tools","Training"];
   resetLainnyaWraps();
-  if(kategoriDikenal.includes(item.kategori)){
+  if(KATEGORI_KNOWN.includes(item.kategori)){
     document.getElementById("fKategori").value = item.kategori;
   } else {
     document.getElementById("fKategori").value = "Lainnya";
