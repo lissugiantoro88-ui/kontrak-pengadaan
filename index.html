@@ -2221,6 +2221,9 @@ let materialReadOnly = false; // diset oleh setFieldPermissions()
 const MATERIAL_STATUS_DEF = {
   direncanakan: { label:"Planned",  color:"#6B4FA0", bg:"#EFE9F7" },
   menunggu:     { label:"On Order", color:"var(--accent)", bg:"var(--accent-soft)" },
+  jatuhTempo:   { label:"Due",      color:"#2A9D8F", bg:"#E6F5F3" }, // ETA = hari ini persis. Warna teal sengaja
+                                                                       // beda dari amber (dipakai Partial) supaya
+                                                                       // tidak ketuker walau sama2 "kuning-ish family".
   terlambat:    { label:"Overdue",  color:"var(--red)", bg:"var(--red-soft)" },
   sebagian:     { label:"Partial",  color:"var(--amber)", bg:"var(--amber-soft)" },
   lengkap:      { label:"Received", color:"var(--green)", bg:"var(--green-soft)" }
@@ -2231,15 +2234,19 @@ function isMaterialPOTerbit(){
   return !!(cb && cb.checked);
 }
 
-// Status "belum ada yang diterima" DIPECAH jadi 2, bukan satu label generik
-// "Belum Datang" untuk semua kasus (itu terkesan menuduh padahal wajar kalau
-// ETA-nya masih di depan):
-//  - "Menunggu"  : PO terbit, belum ada Qty Diterima, TAPI ETA (Tgl Onsite)
-//                  belum lewat (atau belum diisi sama sekali) — masih wajar,
-//                  belum perlu dikhawatirkan.
-//  - "Terlambat" : PO terbit, belum ada Qty Diterima, DAN ETA sudah lewat
-//                  (hari ini atau sebelumnya) — baru ini yang benar2 perlu
-//                  ditindaklanjuti/red flag.
+// Status "belum ada yang diterima" DIPECAH jadi 3, bukan cuma 2 (Menunggu/
+// Terlambat) atau satu label generik "Belum Datang" untuk semua kasus:
+//  - "Menunggu"     : PO terbit, belum ada Qty Diterima, ETA (Tgl Onsite)
+//                     masih di HARI-HARI MENDATANG (atau belum diisi sama
+//                     sekali) — masih wajar, belum perlu dikhawatirkan.
+//  - "Due"          : ETA persis HARI INI. Belum telat — vendor masih di
+//                     dalam jendela waktu yang dijanjikan — tapi sudah perlu
+//                     mulai dipantau. Dipisah dari Terlambat supaya planner
+//                     tidak salah tuduh barang yang justru sedang datang
+//                     tepat waktu.
+//  - "Terlambat"    : ETA sudah LEWAT (mulai besoknya dari ETA, bukan hari
+//                     ETA itu sendiri) — baru status ini yang benar2 red
+//                     flag / perlu ditindaklanjuti.
 function computeMaterialStatusKey(row, poTerbit){
   const qtyPesan = parseFloat(row.qtyPesan) || 0;
   const qtyDiterima = parseFloat(row.qtyDiterima) || 0;
@@ -2252,15 +2259,15 @@ function computeMaterialStatusKey(row, poTerbit){
     // PENTING: jangan `new Date(row.tanggalOnsite)` langsung — string tanggal
     // polos ("YYYY-MM-DD") diparse sebagai TENGAH MALAM UTC oleh JS, bukan
     // tengah malam lokal. Untuk timezone yang lebih maju dari UTC (WITA
-    // UTC+8), itu bikin ETA yang jatuh tempo HARI INI tampak "belum lewat"
-    // sampai besoknya (telat ±8 jam mendeteksi Overdue). Parse manual per
-    // komponen tanggal supaya dibandingkan di tengah malam lokal juga.
+    // UTC+8), itu bikin perbandingan "hari ini" meleset ±8 jam. Parse manual
+    // per komponen tanggal supaya dibandingkan di tengah malam lokal juga.
     const [oy, om, od] = row.tanggalOnsite.split("-").map(Number);
     if(oy && om && od){
       const onsiteMs = new Date(oy, om - 1, od).getTime();
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
-      if(onsiteMs <= todayStart.getTime()) return "terlambat";
+      if(onsiteMs < todayStart.getTime()) return "terlambat"; // ETA sudah lewat dari kemarin atau sebelumnya
+      if(onsiteMs === todayStart.getTime()) return "jatuhTempo"; // ETA persis hari ini
     }
   }
   return "menunggu";
@@ -4124,9 +4131,8 @@ window.exportTrackingMaterialPdf = function(){
   // dan sebaran status kedatangan di seluruh grup yang tampil ini. Export
   // SELALU menampilkan seluruh baris penuh (bukan mengikuti collapse yang
   // sedang aktif di layar) — laporan cetak harus komprehensif. ---
-  const MATERIAL_STATUS_HEX = { direncanakan:"#6B4FA0", menunggu:"#2B6CB0", terlambat:"#B84A3E", sebagian:"#C77D2E", lengkap:"#3C7A5C" };
   let taggedCount = 0, untaggedCount = 0, pekerjaanCount = 0, materialCount = 0;
-  const statusCounts = { direncanakan:0, menunggu:0, terlambat:0, sebagian:0, lengkap:0 };
+  const statusCounts = { direncanakan:0, menunggu:0, jatuhTempo:0, terlambat:0, sebagian:0, lengkap:0 };
   entries.forEach(g => {
     if(g.tagged) taggedCount++; else untaggedCount++;
     pekerjaanCount += g.pekerjaanList.length;
@@ -4204,8 +4210,9 @@ window.exportTrackingMaterialPdf = function(){
     <div class="box"><div class="n">${untaggedCount}</div><div class="l">Grup Tanpa Tag</div></div>
     <div class="box"><div class="n">${pekerjaanCount}</div><div class="l">Pekerjaan Tercakup</div></div>
     <div class="box"><div class="n">${materialCount}</div><div class="l">Baris Material</div></div>
-    <div class="box" style="border-color:${MATERIAL_STATUS_HEX.terlambat};"><div class="n" style="color:${MATERIAL_STATUS_HEX.terlambat};">${statusCounts.terlambat}</div><div class="l">Overdue</div></div>
-    <div class="box" style="border-color:${MATERIAL_STATUS_HEX.lengkap};"><div class="n" style="color:${MATERIAL_STATUS_HEX.lengkap};">${statusCounts.lengkap}</div><div class="l">Received</div></div>
+    <div class="box" style="border-color:${MATERIAL_STATUS_DEF.jatuhTempo.color};"><div class="n" style="color:${MATERIAL_STATUS_DEF.jatuhTempo.color};">${statusCounts.jatuhTempo}</div><div class="l">Due</div></div>
+    <div class="box" style="border-color:${MATERIAL_STATUS_DEF.terlambat.color};"><div class="n" style="color:${MATERIAL_STATUS_DEF.terlambat.color};">${statusCounts.terlambat}</div><div class="l">Overdue</div></div>
+    <div class="box" style="border-color:${MATERIAL_STATUS_DEF.lengkap.color};"><div class="n" style="color:${MATERIAL_STATUS_DEF.lengkap.color};">${statusCounts.lengkap}</div><div class="l">Received</div></div>
   </div>
 
   <table>
@@ -5363,8 +5370,6 @@ window.printSingleItem = function(){
   // + checklist checkbox saat ini), bukan snapshot tersimpan — supaya kalau
   // user baru saja centang/qty tapi belum tekan Simpan, hasil cetak tetap
   // sama persis dengan yang sedang terlihat di layar (bukan versi lama).
-  const MATERIAL_STATUS_HEX = { direncanakan:"#6B4FA0", menunggu:"#2B6CB0", terlambat:"#B84A3E", sebagian:"#C77D2E", lengkap:"#3C7A5C" };
-  const MATERIAL_STATUS_LABEL = { direncanakan:"Planned", menunggu:"On Order", terlambat:"Overdue", sebagian:"Partial", lengkap:"Received" };
   const poTerbitLive = isMaterialPOTerbit();
   const materialList = materialRowsState.map(r => ({
     deskripsi: r.deskripsi, brand: r.brand, qtyPesan: r.qtyPesan, qtyDiterima: r.qtyDiterima,
@@ -5381,7 +5386,7 @@ window.printSingleItem = function(){
         <td>${m.dt ? escapeHtml(m.dt) : "—"}</td>
         <td>${m.tanggalOnsite ? fmtDate(m.tanggalOnsite) : "—"}</td>
         <td>${m.tanggalDiterimaAktual ? fmtDate(m.tanggalDiterimaAktual) : "—"}</td>
-        <td><span style="color:${MATERIAL_STATUS_HEX[statusKey]};font-weight:700;">${MATERIAL_STATUS_LABEL[statusKey]}</span></td>
+        <td><span style="color:${MATERIAL_STATUS_DEF[statusKey].color};font-weight:700;">${MATERIAL_STATUS_DEF[statusKey].label}</span></td>
         <td class="noteCell" style="font-size:10.5px;color:#5B6472;">${escapeHtml(m.catatan || "")}</td>
       </tr>
     `;
