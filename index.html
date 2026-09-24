@@ -2200,8 +2200,15 @@ function computeMaterialStatusKey(row, poTerbit){
     return "sebagian";
   }
   if(row.tanggalOnsite){
-    const onsiteMs = new Date(row.tanggalOnsite).getTime();
-    if(!isNaN(onsiteMs)){
+    // PENTING: jangan `new Date(row.tanggalOnsite)` langsung — string tanggal
+    // polos ("YYYY-MM-DD") diparse sebagai TENGAH MALAM UTC oleh JS, bukan
+    // tengah malam lokal. Untuk timezone yang lebih maju dari UTC (WITA
+    // UTC+8), itu bikin ETA yang jatuh tempo HARI INI tampak "belum lewat"
+    // sampai besoknya (telat ±8 jam mendeteksi Overdue). Parse manual per
+    // komponen tanggal supaya dibandingkan di tengah malam lokal juga.
+    const [oy, om, od] = row.tanggalOnsite.split("-").map(Number);
+    if(oy && om && od){
+      const onsiteMs = new Date(oy, om - 1, od).getTime();
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
       if(onsiteMs <= todayStart.getTime()) return "terlambat";
@@ -2280,6 +2287,17 @@ function refreshMaterialStatusBadges(){
       const el = document.getElementById(fid);
       if(el) el.disabled = materialReadOnly || poTerbit;
     });
+    // Tombol hapus (✕) ikut terkunci begitu PO terbit — sebelumnya cuma
+    // field2 di atas yang dikunci, tombol hapus tetap aktif, jadi baris
+    // yang datanya sudah final (bahkan sudah ada histori Qty Diterima/DT)
+    // masih bisa terhapus permanen tanpa sengaja. Konsisten dengan lockOrder
+    // di renderMaterialRows().
+    const removeBtn = document.getElementById(`matRemoveBtn_${row.id}`);
+    if(removeBtn){
+      const lockOrder = materialReadOnly || poTerbit;
+      removeBtn.disabled = lockOrder;
+      removeBtn.title = lockOrder ? "Tidak bisa dihapus — PO sudah terbit, data pemesanan sudah final" : "Hapus material ini";
+    }
     // Qty Diterima, DT, & Tgl Onsite cuma relevan (dan baru boleh diisi)
     // begitu PO terbit — sebelum itu belum ada yang bisa "diterima". Tiap
     // baris material punya DT/Tgl Onsite masing2 karena kedatangannya bisa
@@ -2326,7 +2344,7 @@ function renderMaterialRows(){
               <input type="number" id="matQtyPesan_${row.id}" min="0" step="any" value="${escapeHtml(row.qtyPesan)}"
                 oninput="window.onMaterialFieldInput(${row.id},'qtyPesan',this.value)" ${lockOrder ? "disabled" : ""}>
             </div>
-            <button type="button" class="materialRemoveBtn" title="Hapus material ini" onclick="window.removeMaterialRow(${row.id})" ${readOnly ? "disabled" : ""}>✕</button>
+            <button type="button" id="matRemoveBtn_${row.id}" class="materialRemoveBtn" title="${lockOrder ? "Tidak bisa dihapus — PO sudah terbit, data pemesanan sudah final" : "Hapus material ini"}" onclick="window.removeMaterialRow(${row.id})" ${lockOrder ? "disabled" : ""}>✕</button>
           </div>
           <div class="materialRowGridReceive" id="matReceiveWrap_${row.id}" style="display:${poTerbit ? "grid" : "none"};">
             <div class="materialReceiveLabel">📦 Info Penerimaan (setelah PO terbit)</div>
