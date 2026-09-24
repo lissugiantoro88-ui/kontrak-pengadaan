@@ -177,6 +177,11 @@
     color:var(--accent);background:var(--accent-soft);padding:1px 7px;border-radius:8px;margin-left:8px;
     vertical-align:middle;
   }
+  .poIncompleteBadge{
+    display:inline-block;font-size:10px;font-family:'IBM Plex Mono',monospace;font-weight:600;
+    color:#fff;background:var(--amber);padding:1px 7px;border-radius:8px;margin-left:8px;
+    vertical-align:middle;text-transform:uppercase;letter-spacing:.02em;cursor:help;
+  }
   .retroactiveCheck{
     display:flex;align-items:center;gap:9px;cursor:pointer;font-size:12.5px;
     color:var(--ink-soft);margin-bottom:6px;
@@ -1061,6 +1066,7 @@
           <option value="priority">⭐ Prioritas</option>
           <option value="expiring">Kontrak Mendekati Habis</option>
           <option value="needsManagement">🚩 Perlu Keputusan Manajemen</option>
+          <option value="poIncomplete">⚠ Data PO Belum Lengkap</option>
           <option value="hold">Hold</option>
           <option value="cancel">Cancelled</option>
         </select>
@@ -3230,6 +3236,48 @@ function isAheadOfSchedule(item){
 function countOpenInstructions(item){
   if(!item.instructions) return 0;
   return Object.values(item.instructions).filter(e => e.type === "instruksi" && e.status !== "done").length;
+}
+
+// ---------------------------------------------------------------------
+// DATA PO BELUM LENGKAP — checklist "Kontrak/PO" sudah dicentang, tapi
+// field2 wajib untuk rekap Summary PO belum diisi. Field wajib:
+//   - Nomor PO, Nilai PO         (checklist Kontrak/PO)
+//   - Vendor Pemenang            (checklist Penetapan Pemenang — LINTAS
+//                                 TAHAP, sengaja diikutkan meski beda
+//                                 checklist, karena Summary PO butuh ini)
+//   - Tgl Onsite / Day One       (mengikuti showIf field-nya sendiri di
+//                                 STAGE_DETAIL_FIELDS.kontrakPO — Tgl Onsite
+//                                 wajib utk Material/All in, Day One wajib
+//                                 utk Jasa/All in; utk All in DUA2NYA wajib)
+// Empowerment dikecualikan (bukan proses kontraktual, tidak ada Summary PO).
+// SENGAJA validasi non-blocking (tidak mencegah Simpan) — cuma dipakai utk
+// sinyal (badge/filter/daftar personal), bukan gate keras.
+// ---------------------------------------------------------------------
+function isCurrencyValueEmpty(raw){
+  if(!raw) return true;
+  if(typeof raw === "object") return raw.amount === "" || raw.amount === null || raw.amount === undefined;
+  return String(raw).trim() === "";
+}
+
+function getPOMissingFields(item){
+  if(!item.stages || !item.stages.kontrakPO) return []; // checklist belum dicentang -> belum relevan
+  if(item.contractType === "Empowerment") return [];
+
+  const kontrakDetail = (item.stageDetails && item.stageDetails.kontrakPO) || {};
+  const pemenangDetail = (item.stageDetails && item.stageDetails.penetapanPemenang) || {};
+  const jp = item.jenisPengadaan || "";
+
+  const missing = [];
+  if(!kontrakDetail.nomorPO || !String(kontrakDetail.nomorPO).trim()) missing.push("Nomor PO");
+  if(isCurrencyValueEmpty(kontrakDetail.nilaiPO)) missing.push("Nilai PO");
+  if(!pemenangDetail.vendorPemenang || !String(pemenangDetail.vendorPemenang).trim()) missing.push("Vendor Pemenang");
+  if(["Material","All in"].includes(jp) && !kontrakDetail.tanggalOnsite) missing.push("Tgl Onsite");
+  if(["Jasa","All in"].includes(jp) && !kontrakDetail.dayOne) missing.push("Day One");
+  return missing;
+}
+
+function isPOKontrakIncomplete(item){
+  return getPOMissingFields(item).length > 0;
 }
 
 function daysUntil(dateStr){
@@ -5579,6 +5627,7 @@ function renderMyPerformance(items){
   const done = myItems.filter(i => getTotalProgress(i) >= 100).length;
   const overdue = myItems.filter(isProgressOverdue);
   const stuck = myItems.filter(isStuck);
+  const poIncomplete = myItems.filter(isPOKontrakIncomplete);
   const myPriority = myItems.filter(i => i.isPriority && getTotalProgress(i) < 100 && !i.statusKontrak);
   const activeItems = myItems.filter(i => getTotalProgress(i) < 100);
   const remainingSum = activeItems.reduce((s,i) => s + (100 - getTotalProgress(i)), 0);
@@ -5633,6 +5682,15 @@ function renderMyPerformance(items){
         </div>
       `).join("")}</div>`;
 
+  const poIncompleteListHtml = poIncomplete.length === 0
+    ? `<div class="hint">Tidak ada data PO yang belum lengkap. Baik.</div>`
+    : `<div class="myOverdueList">${poIncomplete.map(i => `
+        <div class="moItem" style="cursor:pointer;" onclick='window.switchView("list");window.openEditModal(${JSON.stringify(i.id)})'>
+          <span>${escapeHtml(i.namaPekerjaan)}</span>
+          <span class="moDate">Belum diisi: ${escapeHtml(getPOMissingFields(i).join(", "))}</span>
+        </div>
+      `).join("")}</div>`;
+
   return `
     <div class="dashSection">
       <h3>Kinerja Saya</h3>
@@ -5643,6 +5701,7 @@ function renderMyPerformance(items){
           <div><div class="num mono" style="font-size:22px;">${done}</div><div class="lbl">Selesai</div></div>
           <div><div class="num mono" style="font-size:22px;">${remainingSum}</div><div class="lbl">Sisa Beban (poin)</div></div>
           <div><div class="num mono" style="font-size:22px;color:${overdue.length>0?'var(--red)':'inherit'}">${overdue.length}</div><div class="lbl">Terlambat</div></div>
+          <div><div class="num mono" style="font-size:22px;color:${poIncomplete.length>0?'var(--amber)':'inherit'}">${poIncomplete.length}</div><div class="lbl">⚠ Data PO Belum Lengkap</div></div>
         </div>
         <div style="margin-top:14px;">
           <div class="stageGroupTitle" style="margin-bottom:8px;">⭐ Pekerjaan Prioritas Saya</div>
@@ -5659,6 +5718,10 @@ function renderMyPerformance(items){
         <div style="margin-top:14px;">
           <div class="stageGroupTitle" style="margin-bottom:8px;">Pekerjaan Saya Tanpa Progress (&ge;${STUCK_THRESHOLD_DAYS} hari)</div>
           ${stuckListHtml}
+        </div>
+        <div style="margin-top:14px;">
+          <div class="stageGroupTitle" style="margin-bottom:8px;">⚠ Data PO Belum Lengkap</div>
+          ${poIncompleteListHtml}
         </div>
       </div>
     </div>
@@ -5765,6 +5828,7 @@ function getFilteredItems(){
   if(fSignal === "priority") items = items.filter(i => i.isPriority);
   if(fSignal === "expiring") items = items.filter(isExpiringSoon);
   if(fSignal === "needsManagement") items = items.filter(i => i.needsManagementSupport);
+  if(fSignal === "poIncomplete") items = items.filter(isPOKontrakIncomplete);
   if(fSignal === "hold") items = items.filter(i => i.statusKontrak === "hold");
   if(fSignal === "cancel") items = items.filter(i => i.statusKontrak === "cancel");
   if(fSearch){
@@ -5789,7 +5853,7 @@ function getFilteredItems(){
   if(fContractType) filterLabels.push(`Jenis Kontrak: ${fContractType}`);
   if(fPlanner) filterLabels.push(`Planner: ${fPlanner}`);
   if(fSignal){
-    const map = { belum:"Belum Dimulai", progress:"In Progress", selesai:"Selesai", overdue:"Overdue", priority:"Prioritas", expiring:"Kontrak Mendekati Habis", needsManagement:"Perlu Keputusan Manajemen", hold:"Hold", cancel:"Cancelled" };
+    const map = { belum:"Belum Dimulai", progress:"In Progress", selesai:"Selesai", overdue:"Overdue", priority:"Prioritas", expiring:"Kontrak Mendekati Habis", needsManagement:"Perlu Keputusan Manajemen", poIncomplete:"Data PO Belum Lengkap", hold:"Hold", cancel:"Cancelled" };
     filterLabels.push(`Status: ${map[fSignal] || fSignal}`);
   }
 
@@ -5883,6 +5947,7 @@ window.renderTable = function(){
     const status = getItemStatus(item);
     const overdue = status.key === "overdue";
     const expiring = isExpiringSoon(item);
+    const poMissing = getPOMissingFields(item);
     const pillClass = KATEGORI_PILL_CLASS[item.kategori] || "pill-lainnya";
 
     // weighted-zone marks di track (proporsi 3 kelompok: 14 / 53 / 33)
@@ -5907,7 +5972,7 @@ window.renderTable = function(){
     return `
       <tr class="${overdue ? 'rowOverdue' : ''}">
         <td>
-          <div class="jobname">${item.isPriority ? `<span class="priorityFlagBadge">⭐ Prioritas</span> ` : ""}${escapeHtml(item.namaPekerjaan)}${relativeUpdateBadge(item)}${isStuck(item) ? `<span class="stuckBadge">${getAgeDays(item)} Hari Tanpa Progress</span>` : ""}${item.needsManagementSupport ? `<span class="mgmtFlagBadge">🚩 Need Support Management</span>` : ""}${isAheadOfSchedule(item) ? `<span class="aheadFlagBadge">Ahead of Schedule</span>` : ""}${countOpenInstructions(item) > 0 ? `<span class="instructionFlagBadge">📌 ${countOpenInstructions(item)}</span>` : ""}</div>
+          <div class="jobname">${item.isPriority ? `<span class="priorityFlagBadge">⭐ Prioritas</span> ` : ""}${escapeHtml(item.namaPekerjaan)}${relativeUpdateBadge(item)}${isStuck(item) ? `<span class="stuckBadge">${getAgeDays(item)} Hari Tanpa Progress</span>` : ""}${item.needsManagementSupport ? `<span class="mgmtFlagBadge">🚩 Need Support Management</span>` : ""}${isAheadOfSchedule(item) ? `<span class="aheadFlagBadge">Ahead of Schedule</span>` : ""}${countOpenInstructions(item) > 0 ? `<span class="instructionFlagBadge">📌 ${countOpenInstructions(item)}</span>` : ""}${poMissing.length > 0 ? `<span class="poIncompleteBadge" title="Data PO belum lengkap: ${escapeHtml(poMissing.join(", "))}">⚠ Data PO Belum Lengkap</span>` : ""}</div>
           ${item.equipmentTag ? `<div class="hint" style="margin-top:2px;">🏷️ ${escapeHtml(item.equipmentTag)}</div>` : ""}
           ${item.progressNote ? `<div class="progNote">${escapeHtml(item.progressNote)}</div>` : ""}
         </td>
