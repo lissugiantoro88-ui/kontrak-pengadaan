@@ -2051,16 +2051,26 @@ const STAGE_DETAIL_FIELDS = {
   ],
   kontrakPO: [
     { key:"nomorPO", label:"Nomor PO", type:"text" },
-    { key:"tanggalPO", label:"Tanggal PO", type:"date" },
+    { key:"tanggalPO", label:"Tanggal PO", type:"date", onchange:"window.autoFillKontrakDT()" },
     { key:"nilaiPO", label:"Nilai PO", type:"currency" },
-    { key:"dt", label:"DT", type:"text", placeholder:"mis. 45 hari kerja", showIf:["Material","All in"] },
+    // DT di sini = durasi (SELISIH HARI KALENDER Tanggal PO -> Tgl Diterima
+    // Aktual), bukan nomor tiket (beda dengan field "DT" di baris Daftar
+    // Material, yang itu nomor surat jalan/DO, teks bebas). Begitu kedua
+    // tanggal itu terisi, nilainya diisi OTOMATIS oleh
+    // window.autoFillKontrakDT() -- tapi cuma kalau field ini masih kosong,
+    // supaya tidak menimpa angka yang sudah sengaja diedit manual planner
+    // (mis. ada dispute DT resmi kontrak vs realita). Dihitung hari
+    // KALENDER, bukan hari kerja -- konsisten dgn cara hitung selisih-hari
+    // lain di aplikasi ini (SLA telat/cepat checklist tahap), yang juga
+    // tidak punya kalender libur nasional.
+    { key:"dt", label:"DT", type:"text", placeholder:"mis. 45 hari kalender (otomatis begitu Tanggal PO & Tgl Diterima Aktual terisi, bisa diedit manual)", showIf:["Material","All in"] },
     // ETA = rencana/estimasi kedatangan dari vendor (dipakai jg sbg acuan
     // rekap). Tgl Diterima Aktual = fakta barang benar2 sudah diterima —
     // SENGAJA dipisah, jangan digabung lagi jadi satu field seperti dulu
     // (itu sumber kebingungan planner: "ini diisi pas planning atau pas
     // barang aktual diterima?").
     { key:"tanggalOnsite", label:"ETA (Estimasi Kedatangan)", type:"date", showIf:["Material","All in"] },
-    { key:"tanggalDiterimaAktual", label:"Tgl Diterima Aktual", type:"date", showIf:["Material","All in"] },
+    { key:"tanggalDiterimaAktual", label:"Tgl Diterima Aktual", type:"date", showIf:["Material","All in"], onchange:"window.autoFillKontrakDT()" },
     { key:"dayOne", label:"Day One", type:"date", showIf:["Jasa","All in"] },
     { key:"durasiPekerjaan", label:"Durasi Pekerjaan", type:"text", placeholder:"mis. 30 hari kalender", showIf:["Jasa","All in"] }
   ]
@@ -2775,7 +2785,7 @@ function renderStageChecklist(item){
             html += `
               <div class="stageDetailField">
                 <label>${f.label}</label>
-                <input type="${f.type}" id="stageDetail_${s.key}_${f.key}" value="${escapeHtml(val)}" placeholder="${f.placeholder || ""}">
+                <input type="${f.type}" id="stageDetail_${s.key}_${f.key}" value="${escapeHtml(val)}" placeholder="${f.placeholder || ""}" ${f.onchange ? `onchange="${f.onchange}"` : ""}>
               </div>`;
           }
           html += `</div>`;
@@ -2788,6 +2798,30 @@ function renderStageChecklist(item){
   container.innerHTML = html;
   window.updateProgressPreview();
 }
+
+// Auto-isi DT (durasi, hari KALENDER) di checklist Kontrak/PO begitu
+// Tanggal PO & Tgl Diterima Aktual dua-duanya terisi -- TAPI cuma kalau
+// field DT masih kosong, supaya tidak menimpa angka yang sudah diedit
+// manual planner. Dipanggil dari onchange kedua field tanggal itu (lihat
+// STAGE_DETAIL_FIELDS.kontrakPO).
+window.autoFillKontrakDT = function(){
+  const dtEl = document.getElementById("stageDetail_kontrakPO_dt");
+  if(!dtEl || dtEl.value.trim() !== "") return; // sudah ada isi (manual/auto sebelumnya) -- jangan timpa
+  const poEl = document.getElementById("stageDetail_kontrakPO_tanggalPO");
+  const aktualEl = document.getElementById("stageDetail_kontrakPO_tanggalDiterimaAktual");
+  if(!poEl || !aktualEl || !poEl.value || !aktualEl.value) return;
+  // Parse manual per komponen tanggal (bukan `new Date(str)` langsung) --
+  // pola yang sama dipakai di computeMaterialStatusKey supaya konsisten
+  // dan tidak kena masalah UTC-vs-lokal.
+  const [py, pm, pd] = poEl.value.split("-").map(Number);
+  const [ay, am, ad] = aktualEl.value.split("-").map(Number);
+  if(!py || !pm || !pd || !ay || !am || !ad) return;
+  const poMs = new Date(py, pm - 1, pd).getTime();
+  const aktualMs = new Date(ay, am - 1, ad).getTime();
+  const diffDays = Math.round((aktualMs - poMs) / 86400000);
+  if(diffDays < 0) return; // Tgl Diterima Aktual sebelum Tanggal PO -- data tidak masuk akal, jangan dipaksa isi
+  dtEl.value = `${diffDays} hari kalender`;
+};
 
 // ---------------------------------------------------------------------
 // GATING: "Proses Tender" terkunci sampai "Pengiriman Berkas ke
