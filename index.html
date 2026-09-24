@@ -2327,11 +2327,16 @@ function refreshMaterialStatusBadges(){
     const receiveWrap = document.getElementById(`matReceiveWrap_${row.id}`);
     if(receiveWrap) receiveWrap.style.display = poTerbit ? "grid" : "none";
   });
-  // "+ Tambah Material" ditutup begitu PO terbit — daftar material yang
-  // di-order sudah final saat PO keluar, jadi tidak boleh nambah baris baru
-  // lagi (baris yang sudah ada tetap bisa diisi Qty Diterima/DT/Tgl Onsite).
+  // "+ Tambah Material" ditutup begitu PO terbit — TAPI HANYA kalau sudah
+  // ada minimal 1 baris material (baris yang sudah ada tetap bisa diisi Qty
+  // Diterima/DT/Tgl Onsite, tidak boleh nambah baris BARU lagi karena
+  // order-nya sudah final saat PO keluar). Kalau daftarnya masih KOSONG,
+  // tombol tetap aktif meski PO sudah terbit — supaya pekerjaan lama yang
+  // PO-nya sudah dicentang dari sebelum fitur Daftar Material ada (atau
+  // planner yang lupa isi sebelum centang PO) tetap bisa disusulkan
+  // datanya, bukan terkunci permanen tanpa jalan keluar.
   const addBtn = document.getElementById("btnAddMaterial");
-  if(addBtn) addBtn.style.display = (materialReadOnly || poTerbit) ? "none" : "inline-flex";
+  if(addBtn) addBtn.style.display = (materialReadOnly || (poTerbit && materialRowsState.length > 0)) ? "none" : "inline-flex";
 }
 
 function renderMaterialRows(){
@@ -2401,7 +2406,11 @@ function renderMaterialRows(){
       `;
     }).join("");
   }
-  document.getElementById("btnAddMaterial").style.display = (readOnly || poTerbit) ? "none" : "inline-flex";
+  // Sama seperti di refreshMaterialStatusBadges(): PO terbit cuma menutup
+  // tombol tambah kalau SUDAH ada baris material. Daftar kosong + PO sudah
+  // dicentang (data lama sebelum fitur ini ada, atau kelupaan) tetap harus
+  // bisa disusulkan.
+  document.getElementById("btnAddMaterial").style.display = (readOnly || (poTerbit && materialRowsState.length > 0)) ? "none" : "inline-flex";
 }
 
 function getMaterialListFromState(){
