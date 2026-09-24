@@ -601,16 +601,32 @@
      dipisah dari baris "info penerimaan" di bawahnya supaya tidak ada
      kolom tersembunyi yang bikin field lain numpuk sempit ke kiri. */
   .materialRowGridMain{display:grid;grid-template-columns:2.2fr 1.3fr .9fr auto;gap:8px;align-items:end;}
-  /* Baris info penerimaan (Qty Diterima/DT/Tgl Onsite) baru dirender saat
-     PO terbit, sebagai baris grid TERPISAH & lebar penuh sendiri — jadi
-     3 field ini dapat ruang lega, tidak berbagi track dengan baris utama. */
+  /* Baris ETA (rencana/estimasi kedatangan vendor) — TERPISAH dari baris
+     "info penerimaan" di bawahnya, supaya jelas ini soal RENCANA/estimasi,
+     bukan fakta barang sudah datang. Dipakai untuk hitung status Overdue,
+     jadi baru relevan begitu PO terbit (vendor baru punya janji tanggal
+     kirim setelah PO keluar). */
+  .materialRowGridEta{
+    display:grid;grid-template-columns:1fr;gap:8px;align-items:end;
+    margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);
+  }
+  .materialRowGridEta .field{max-width:220px;}
+  .materialEtaLabel{
+    font-size:10.5px;font-weight:600;color:var(--accent);
+    text-transform:uppercase;letter-spacing:.03em;margin-bottom:-2px;
+  }
+  /* Baris info penerimaan (Qty Diterima/DT/Tgl Diterima Aktual) baru
+     dirender saat PO terbit, sebagai baris grid TERPISAH & lebar penuh
+     sendiri — jadi 3 field ini dapat ruang lega, tidak berbagi track dengan
+     baris utama. Ini fakta AKTUAL (baru terisi begitu barang benar2 tiba),
+     beda dari ETA di atas yang sifatnya rencana/estimasi. */
   .materialRowGridReceive{
     display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;align-items:end;
     margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);
   }
-  .materialRowGridMain .field, .materialRowGridReceive .field{margin-bottom:0;}
-  .materialRowGridMain label, .materialRowGridReceive label{display:block;font-size:11px;color:var(--ink-soft);margin-bottom:3px;}
-  .materialRowGridMain input, .materialRowGridReceive input{
+  .materialRowGridMain .field, .materialRowGridEta .field, .materialRowGridReceive .field{margin-bottom:0;}
+  .materialRowGridMain label, .materialRowGridEta label, .materialRowGridReceive label{display:block;font-size:11px;color:var(--ink-soft);margin-bottom:3px;}
+  .materialRowGridMain input, .materialRowGridEta input, .materialRowGridReceive input{
     width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:5px;
     font-family:inherit;font-size:12.5px;background:#fff;box-sizing:border-box;
   }
@@ -890,6 +906,7 @@
     main{padding:16px;}
     .modalRow2{grid-template-columns:1fr;}
     .materialRowGridMain{grid-template-columns:1fr;}
+    .materialRowGridEta .field{max-width:none;}
     .materialRowGridReceive{grid-template-columns:1fr;}
     header.topbar{padding:12px 16px;}
     .tableWrap{overflow-x:auto;}
@@ -1199,7 +1216,8 @@
               <th>Jenis Pengadaan</th>
               <th class="sortable" onclick="window.setPORefSort('vendor')">Vendor</th>
               <th>DT</th>
-              <th>Tgl Onsite</th>
+              <th>ETA</th>
+              <th>Tgl Diterima Aktual</th>
               <th>Day One</th>
               <th>Durasi</th>
               <th class="sortable" onclick="window.setPORefSort('nilaiSort')" style="text-align:right;">Nilai PO</th>
@@ -2036,7 +2054,13 @@ const STAGE_DETAIL_FIELDS = {
     { key:"tanggalPO", label:"Tanggal PO", type:"date" },
     { key:"nilaiPO", label:"Nilai PO", type:"currency" },
     { key:"dt", label:"DT", type:"text", placeholder:"mis. 45 hari kerja", showIf:["Material","All in"] },
-    { key:"tanggalOnsite", label:"Tanggal Onsite", type:"date", showIf:["Material","All in"] },
+    // ETA = rencana/estimasi kedatangan dari vendor (dipakai jg sbg acuan
+    // rekap). Tgl Diterima Aktual = fakta barang benar2 sudah diterima —
+    // SENGAJA dipisah, jangan digabung lagi jadi satu field seperti dulu
+    // (itu sumber kebingungan planner: "ini diisi pas planning atau pas
+    // barang aktual diterima?").
+    { key:"tanggalOnsite", label:"ETA (Estimasi Kedatangan)", type:"date", showIf:["Material","All in"] },
+    { key:"tanggalDiterimaAktual", label:"Tgl Diterima Aktual", type:"date", showIf:["Material","All in"] },
     { key:"dayOne", label:"Day One", type:"date", showIf:["Jasa","All in"] },
     { key:"durasiPekerjaan", label:"Durasi Pekerjaan", type:"text", placeholder:"mis. 30 hari kalender", showIf:["Jasa","All in"] }
   ]
@@ -2182,7 +2206,11 @@ window.onDisiplinChange = function(){
 // dibaca ulang dari DOM tiap simpan) supaya add/remove/re-render baris
 // tidak kehilangan input yang sudah diisi user.
 // ---------------------------------------------------------------------
-let materialRowsState = []; // [{id, deskripsi, brand, qtyPesan, qtyDiterima, dt, tanggalOnsite, catatan, noteOpen}]
+let materialRowsState = []; // [{id, deskripsi, brand, qtyPesan, qtyDiterima, dt, tanggalOnsite, tanggalDiterimaAktual, catatan, noteOpen}]
+// tanggalOnsite = ETA (estimasi/rencana kedatangan dari vendor, dipakai utk
+// hitung status Overdue). tanggalDiterimaAktual = fakta tanggal barang
+// BENAR2 diterima (diisi belakangan, bareng Qty Diterima). Dua fakta
+// berbeda — sengaja dipisah, jangan digabung lagi jadi satu field.
 let materialRowSeq = 0;
 let materialReadOnly = false; // diset oleh setFieldPermissions()
 
@@ -2248,13 +2276,14 @@ function materialRowsFromItem(item){
     qtyDiterima: m.qtyDiterima != null ? String(m.qtyDiterima) : "",
     dt: m.dt || "",
     tanggalOnsite: m.tanggalOnsite || "",
+    tanggalDiterimaAktual: m.tanggalDiterimaAktual || "",
     catatan: m.catatan || "",
     noteOpen: false
   }));
 }
 
 window.addMaterialRow = function(){
-  materialRowsState.push({ id: ++materialRowSeq, deskripsi:"", brand:"", qtyPesan:"", qtyDiterima:"", dt:"", tanggalOnsite:"", catatan:"", noteOpen:false });
+  materialRowsState.push({ id: ++materialRowSeq, deskripsi:"", brand:"", qtyPesan:"", qtyDiterima:"", dt:"", tanggalOnsite:"", tanggalDiterimaAktual:"", catatan:"", noteOpen:false });
   renderMaterialRows();
 };
 
@@ -2319,9 +2348,13 @@ function refreshMaterialStatusBadges(){
       removeBtn.disabled = lockOrder;
       removeBtn.title = lockOrder ? "Tidak bisa dihapus — PO sudah terbit, data pemesanan sudah final" : "Hapus material ini";
     }
-    // Qty Diterima, DT, & Tgl Onsite cuma relevan (dan baru boleh diisi)
-    // begitu PO terbit — sebelum itu belum ada yang bisa "diterima". Tiap
-    // baris material punya DT/Tgl Onsite masing2 karena kedatangannya bisa
+    // ETA (rencana kedatangan) baru relevan begitu PO terbit — vendor baru
+    // punya janji tanggal kirim setelah PO keluar.
+    const etaWrap = document.getElementById(`matEtaWrap_${row.id}`);
+    if(etaWrap) etaWrap.style.display = poTerbit ? "grid" : "none";
+    // Qty Diterima, DT, & Tgl Diterima Aktual cuma relevan (dan baru boleh
+    // diisi) begitu PO terbit — sebelum itu belum ada yang bisa "diterima".
+    // Tiap baris material punya field2 ini masing2 karena kedatangannya bisa
     // berbeda2 walau satu PO yang sama. Satu wrap untuk ketiganya sekaligus
     // (baris grid terpisah), bukan 3 wrap kecil2 supaya lebar tiap field lega.
     const receiveWrap = document.getElementById(`matReceiveWrap_${row.id}`);
@@ -2372,8 +2405,15 @@ function renderMaterialRows(){
             </div>
             <button type="button" id="matRemoveBtn_${row.id}" class="materialRemoveBtn" title="${lockOrder ? "Tidak bisa dihapus — PO sudah terbit, data pemesanan sudah final" : "Hapus material ini"}" onclick="window.removeMaterialRow(${row.id})" ${lockOrder ? "disabled" : ""}>✕</button>
           </div>
+          <div class="materialRowGridEta" id="matEtaWrap_${row.id}" style="display:${poTerbit ? "grid" : "none"};">
+            <div class="field">
+              <label class="materialEtaLabel">🗓️ ETA (Estimasi Kedatangan dari Vendor)</label>
+              <input type="date" id="matTglOnsite_${row.id}" value="${escapeHtml(row.tanggalOnsite)}"
+                oninput="window.onMaterialFieldInput(${row.id},'tanggalOnsite',this.value)" ${readOnly ? "disabled" : ""}>
+            </div>
+          </div>
           <div class="materialRowGridReceive" id="matReceiveWrap_${row.id}" style="display:${poTerbit ? "grid" : "none"};">
-            <div class="materialReceiveLabel">📦 Info Penerimaan (setelah PO terbit)</div>
+            <div class="materialReceiveLabel">📦 Info Penerimaan (setelah barang benar-benar diterima)</div>
             <div class="field">
               <label>Qty Diterima</label>
               <input type="number" id="matQtyDiterima_${row.id}" min="0" step="any" value="${escapeHtml(row.qtyDiterima)}"
@@ -2385,9 +2425,9 @@ function renderMaterialRows(){
                 oninput="window.onMaterialFieldInput(${row.id},'dt',this.value)" ${readOnly ? "disabled" : ""}>
             </div>
             <div class="field">
-              <label>Tgl Onsite</label>
-              <input type="date" id="matTglOnsite_${row.id}" value="${escapeHtml(row.tanggalOnsite)}"
-                oninput="window.onMaterialFieldInput(${row.id},'tanggalOnsite',this.value)" ${readOnly ? "disabled" : ""}>
+              <label>Tgl Diterima Aktual</label>
+              <input type="date" id="matTglDiterimaAktual_${row.id}" value="${escapeHtml(row.tanggalDiterimaAktual)}"
+                oninput="window.onMaterialFieldInput(${row.id},'tanggalDiterimaAktual',this.value)" ${readOnly ? "disabled" : ""}>
             </div>
           </div>
           <div class="materialStatusRow">
@@ -2425,6 +2465,7 @@ function getMaterialListFromState(){
       qtyDiterima: r.qtyDiterima === "" ? null : (parseFloat(r.qtyDiterima) || 0),
       dt: (r.dt || "").trim(),
       tanggalOnsite: r.tanggalOnsite || "",
+      tanggalDiterimaAktual: r.tanggalDiterimaAktual || "",
       catatan: r.catatan.trim()
     }));
 }
@@ -3280,7 +3321,7 @@ function getPOMissingFields(item){
   if(!kontrakDetail.nomorPO || !String(kontrakDetail.nomorPO).trim()) missing.push("Nomor PO");
   if(isCurrencyValueEmpty(kontrakDetail.nilaiPO)) missing.push("Nilai PO");
   if(!pemenangDetail.vendorPemenang || !String(pemenangDetail.vendorPemenang).trim()) missing.push("Vendor Pemenang");
-  if(["Material","All in"].includes(jp) && !kontrakDetail.tanggalOnsite) missing.push("Tgl Onsite");
+  if(["Material","All in"].includes(jp) && !kontrakDetail.tanggalOnsite) missing.push("ETA");
   if(["Jasa","All in"].includes(jp) && !kontrakDetail.dayOne) missing.push("Day One");
   return missing;
 }
@@ -3602,7 +3643,8 @@ function getPORefRows(){
         // KEEMPATNYA terisi sekaligus (gabungan Material & Jasa), tidak
         // saling eksklusif lagi seperti sebelumnya.
         dt: kontrakDetail.dt || "",
-        tanggalOnsite: kontrakDetail.tanggalOnsite || "",
+        tanggalOnsite: kontrakDetail.tanggalOnsite || "", // ETA — rencana/estimasi
+        tanggalDiterimaAktual: kontrakDetail.tanggalDiterimaAktual || "", // fakta barang aktual diterima
         dayOne: kontrakDetail.dayOne || "",
         durasiPekerjaan: kontrakDetail.durasiPekerjaan || ""
       };
@@ -3692,6 +3734,7 @@ window.renderPORefTable = function(){
       <td>${escapeHtml(r.vendor || "—")}</td>
       <td class="mono">${escapeHtml(r.dt || "—")}</td>
       <td class="mono">${fmtDate(r.tanggalOnsite)}</td>
+      <td class="mono">${fmtDate(r.tanggalDiterimaAktual)}</td>
       <td class="mono">${fmtDate(r.dayOne)}</td>
       <td class="mono">${escapeHtml(r.durasiPekerjaan || "—")}</td>
       <td class="mono" style="text-align:right;font-weight:600;">${escapeHtml(r.nilai || "—")}</td>
@@ -3714,7 +3757,7 @@ window.renderPORefTable = function(){
   tfoot.style.display = "table-footer-group";
   tfoot.innerHTML = `
     <tr style="font-weight:600;border-top:2px solid var(--line);background:#FAFBFC;">
-      <td colspan="13" style="text-align:right;padding:8px 8px;">Total (${rows.length} PO)</td>
+      <td colspan="14" style="text-align:right;padding:8px 8px;">Total (${rows.length} PO)</td>
       <td class="mono" style="text-align:right;padding:8px 8px;">${totalsText}</td>
       <td></td>
     </tr>
@@ -3836,25 +3879,27 @@ function getFilteredTrackingEntries(){
   return { entries, kw };
 }
 
-// 10 kolom, fokus ke material (bukan ke pekerjaan): No lalu langsung
+// 11 kolom, fokus ke material (bukan ke pekerjaan): No lalu langsung
 // Deskripsi Material di paling kiri (poin fokus tracking), PIC di paling
-// kanan. DT & Tgl Onsite tetap jadi kolom sendiri (bisa beda2 per pekerjaan
-// walau satu Equipment Tag), sedangkan No. PO — yang selalu tunggal per
-// pekerjaan — cukup ditulis sekali di baris sub-header pekerjaan.
+// kanan. DT, ETA, & Tgl Diterima Aktual tetap jadi kolom sendiri (bisa
+// beda2 per pekerjaan walau satu Equipment Tag), sedangkan No. PO — yang
+// selalu tunggal per pekerjaan — cukup ditulis sekali di baris sub-header
+// pekerjaan. ETA (rencana/estimasi) & Tgl Diterima Aktual (fakta) SENGAJA
+// dipisah 2 kolom — jangan digabung lagi, itu 2 fakta berbeda.
 const TRACK_COLGROUP_HTML = `
   <colgroup>
-    <col style="width:4%"><col style="width:20%"><col style="width:10%"><col style="width:7%">
-    <col style="width:7%"><col style="width:8%"><col style="width:9%"><col style="width:9%">
-    <col style="width:16%"><col style="width:10%">
+    <col style="width:4%"><col style="width:18%"><col style="width:9%"><col style="width:6%">
+    <col style="width:6%"><col style="width:7%"><col style="width:8%"><col style="width:8%">
+    <col style="width:9%"><col style="width:15%"><col style="width:10%">
   </colgroup>
 `;
 const TRACK_HEADERS_HTML = `
   <tr>
     <th class="num">No</th><th>Deskripsi Material</th><th>Brand</th><th class="num">Qty Pesan</th>
-    <th class="num">Qty Diterima</th><th>DT</th><th>Tgl Onsite</th><th>Status</th><th>Catatan</th><th>PIC</th>
+    <th class="num">Qty Diterima</th><th>DT</th><th>ETA</th><th>Tgl Diterima Aktual</th><th>Status</th><th>Catatan</th><th>PIC</th>
   </tr>
 `;
-const TRACK_COLSPAN = 10;
+const TRACK_COLSPAN = 11;
 
 // Satu builder dipakai BERSAMA oleh tampilan layar (interaktif, bisa
 // expand/collapse) dan export PDF (statis, selalu tampil penuh) — supaya
@@ -3876,10 +3921,12 @@ function buildMaterialRowHtml(m, rowNo, job, rowspan, isFirstOfJob){
   row += `<td>${escapeHtml(m.brand || "—")}</td>`;
   row += `<td class="num">${m.qtyPesan != null && m.qtyPesan !== "" ? m.qtyPesan : "—"}</td>`;
   row += `<td class="num">${m.qtyDiterima != null && m.qtyDiterima !== "" ? m.qtyDiterima : "—"}</td>`;
-  // DT & Tgl Onsite MELEKAT DI TIAP BARIS MATERIAL (bukan rowspan per
-  // pekerjaan) — kedatangan tiap item material bisa beda2 walau satu PO.
+  // DT, ETA, & Tgl Diterima Aktual MELEKAT DI TIAP BARIS MATERIAL (bukan
+  // rowspan per pekerjaan) — kedatangan tiap item material bisa beda2 walau
+  // satu PO.
   row += `<td>${m.dt ? escapeHtml(m.dt) : "—"}</td>`;
   row += `<td>${m.tanggalOnsite ? fmtDate(m.tanggalOnsite) : "—"}</td>`;
+  row += `<td>${m.tanggalDiterimaAktual ? fmtDate(m.tanggalDiterimaAktual) : "—"}</td>`;
   row += `<td><span class="materialStatusBadge" style="color:${def.color};background:${def.bg};">${def.label}</span></td>`;
   row += `<td class="noteCell">${escapeHtml(m.catatan || "")}</td>`;
   if(isFirstOfJob) row += `<td rowspan="${rowspan}">${escapeHtml(job.pic || "—")}</td>`;
@@ -4122,7 +4169,7 @@ window.exportTrackingMaterialPdf = function(){
   col{ width:auto !important; }
   th, td{ border:1px solid #ccc; padding:5px 6px; text-align:left; font-size:9.5px; vertical-align:top; overflow-wrap:break-word; word-break:break-word; }
   th:nth-child(2), td:nth-child(2){ max-width:210px; } /* Deskripsi Material */
-  th:nth-child(9), td:nth-child(9){ max-width:230px; } /* Catatan */
+  th:nth-child(10), td:nth-child(10){ max-width:230px; } /* Catatan */
   thead th{ background:#F0F0EE; font-weight:700; font-size:9px; text-transform:uppercase; letter-spacing:.02em; }
   td.num, th.num{ text-align:right; font-family:'Courier New',monospace; white-space:nowrap; }
   tr.trackGroupHeaderRow td{ background:#1C2530; color:#fff; font-size:11.5px; font-weight:700; padding:7px 8px; }
@@ -4200,7 +4247,7 @@ window.exportTrackingMaterialExcel = function(){
     ["TRACKING MATERIAL — MONITORING PERENCANAAN PENGADAAN KONTRAK"],
     [`Dibuat oleh: ${currentName} (${currentRole})  |  Tanggal: ${new Date().toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' })}${kw ? `  |  Pencarian: "${kw}"` : ""}`],
     [],
-    ["Equipment Tag", "No. PO", "Pekerjaan", "PIC", "Deskripsi Material", "Brand", "Qty Pesan", "Qty Diterima", "DT", "Tgl Onsite", "Status", "Catatan"]
+    ["Equipment Tag", "No. PO", "Pekerjaan", "PIC", "Deskripsi Material", "Brand", "Qty Pesan", "Qty Diterima", "DT", "ETA", "Tgl Diterima Aktual", "Status", "Catatan"]
   ];
 
   entries.forEach(g => {
@@ -4218,6 +4265,7 @@ window.exportTrackingMaterialExcel = function(){
           m.qtyDiterima != null && m.qtyDiterima !== "" ? m.qtyDiterima : "",
           m.dt || "",
           m.tanggalOnsite ? fmtDate(m.tanggalOnsite) : "",
+          m.tanggalDiterimaAktual ? fmtDate(m.tanggalDiterimaAktual) : "",
           def ? def.label : "",
           m.catatan || ""
         ]);
@@ -4227,11 +4275,11 @@ window.exportTrackingMaterialExcel = function(){
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws["!cols"] = [
-    {wch:22},{wch:16},{wch:34},{wch:16},{wch:34},{wch:16},{wch:10},{wch:12},{wch:14},{wch:12},{wch:12},{wch:30}
+    {wch:22},{wch:16},{wch:34},{wch:16},{wch:34},{wch:16},{wch:10},{wch:12},{wch:14},{wch:12},{wch:16},{wch:12},{wch:30}
   ];
   ws["!merges"] = [
-    { s: {r:0,c:0}, e: {r:0,c:11} },
-    { s: {r:1,c:0}, e: {r:1,c:11} }
+    { s: {r:0,c:0}, e: {r:0,c:12} },
+    { s: {r:1,c:0}, e: {r:1,c:12} }
   ];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Tracking Material");
@@ -4258,6 +4306,7 @@ window.exportPORefPdf = function(){
       <td>${escapeHtml(r.vendor || "—")}</td>
       <td>${escapeHtml(r.dt || "—")}</td>
       <td>${fmtDate(r.tanggalOnsite)}</td>
+      <td>${fmtDate(r.tanggalDiterimaAktual)}</td>
       <td>${fmtDate(r.dayOne)}</td>
       <td>${escapeHtml(r.durasiPekerjaan || "—")}</td>
       <td style="text-align:right;font-weight:700;">${escapeHtml(r.nilai || "—")}</td>
@@ -4311,13 +4360,13 @@ window.exportPORefPdf = function(){
     <thead>
       <tr>
         <th style="width:24px;text-align:center;">No</th><th>Tanggal PO</th><th>No. PO</th><th>Nama Pekerjaan</th><th>Kategori</th>
-        <th>Disiplin</th><th>Jenis Kontrak</th><th>Jenis Pengadaan</th><th>Vendor</th><th>DT</th><th>Tgl Onsite</th><th>Day One</th><th>Durasi</th><th style="text-align:right;">Nilai PO</th><th>Planner</th>
+        <th>Disiplin</th><th>Jenis Kontrak</th><th>Jenis Pengadaan</th><th>Vendor</th><th>DT</th><th>ETA</th><th>Tgl Diterima Aktual</th><th>Day One</th><th>Durasi</th><th style="text-align:right;">Nilai PO</th><th>Planner</th>
       </tr>
     </thead>
     <tbody>${rowsHtml}</tbody>
     <tfoot>
       <tr>
-        <td colspan="13" style="text-align:right;">Total (${rows.length} PO)</td>
+        <td colspan="14" style="text-align:right;">Total (${rows.length} PO)</td>
         <td style="text-align:right;">${totalsText}</td>
         <td></td>
       </tr>
@@ -4348,7 +4397,7 @@ window.exportPORefExcel = function(){
     ["SUMMARY PO — RIWAYAT PENGADAAN KONTRAK — MONITORING PERENCANAAN PENGADAAN KONTRAK"],
     [`Dibuat oleh: ${currentName} (${currentRole})  |  Tanggal: ${new Date().toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' })}  |  Total ${rows.length} PO`],
     [],
-    ["No","Tanggal PO","No. PO","Nama Pekerjaan","Kategori","Disiplin","Jenis Kontrak","Jenis Pengadaan","Vendor","DT","Tgl Onsite","Day One","Durasi","Nilai PO","Mata Uang","Planner"]
+    ["No","Tanggal PO","No. PO","Nama Pekerjaan","Kategori","Disiplin","Jenis Kontrak","Jenis Pengadaan","Vendor","DT","ETA","Tgl Diterima Aktual","Day One","Durasi","Nilai PO","Mata Uang","Planner"]
   ];
   rows.forEach((r, idx) => {
     aoa.push([
@@ -4363,6 +4412,7 @@ window.exportPORefExcel = function(){
       r.vendor || "",
       r.dt || "",
       r.tanggalOnsite ? fmtDate(r.tanggalOnsite) : "",
+      r.tanggalDiterimaAktual ? fmtDate(r.tanggalDiterimaAktual) : "",
       r.dayOne ? fmtDate(r.dayOne) : "",
       r.durasiPekerjaan || "",
       r.nilaiAmount || "", // angka murni (bukan teks berformat) supaya bisa dijumlah/pivot di Excel
@@ -4373,11 +4423,11 @@ window.exportPORefExcel = function(){
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws["!cols"] = [
-    {wch:5},{wch:13},{wch:16},{wch:34},{wch:13},{wch:13},{wch:13},{wch:13},{wch:20},{wch:14},{wch:12},{wch:12},{wch:10},{wch:16},{wch:9},{wch:16}
+    {wch:5},{wch:13},{wch:16},{wch:34},{wch:13},{wch:13},{wch:13},{wch:13},{wch:20},{wch:14},{wch:12},{wch:16},{wch:12},{wch:10},{wch:16},{wch:9},{wch:16}
   ];
   ws["!merges"] = [
-    { s: {r:0,c:0}, e: {r:0,c:15} },
-    { s: {r:1,c:0}, e: {r:1,c:15} }
+    { s: {r:0,c:0}, e: {r:0,c:16} },
+    { s: {r:1,c:0}, e: {r:1,c:16} }
   ];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Summary PO");
@@ -5318,7 +5368,7 @@ window.printSingleItem = function(){
   const poTerbitLive = isMaterialPOTerbit();
   const materialList = materialRowsState.map(r => ({
     deskripsi: r.deskripsi, brand: r.brand, qtyPesan: r.qtyPesan, qtyDiterima: r.qtyDiterima,
-    dt: r.dt, tanggalOnsite: r.tanggalOnsite, catatan: r.catatan
+    dt: r.dt, tanggalOnsite: r.tanggalOnsite, tanggalDiterimaAktual: r.tanggalDiterimaAktual, catatan: r.catatan
   })).filter(m => m.deskripsi.trim());
   const materialRowsHtml = materialList.map(m => {
     const statusKey = computeMaterialStatusKey(m, poTerbitLive);
@@ -5330,6 +5380,7 @@ window.printSingleItem = function(){
         <td class="num">${m.qtyDiterima != null && m.qtyDiterima !== "" ? m.qtyDiterima : "—"}</td>
         <td>${m.dt ? escapeHtml(m.dt) : "—"}</td>
         <td>${m.tanggalOnsite ? fmtDate(m.tanggalOnsite) : "—"}</td>
+        <td>${m.tanggalDiterimaAktual ? fmtDate(m.tanggalDiterimaAktual) : "—"}</td>
         <td><span style="color:${MATERIAL_STATUS_HEX[statusKey]};font-weight:700;">${MATERIAL_STATUS_LABEL[statusKey]}</span></td>
         <td class="noteCell" style="font-size:10.5px;color:#5B6472;">${escapeHtml(m.catatan || "")}</td>
       </tr>
@@ -5403,7 +5454,7 @@ window.printSingleItem = function(){
   ${materialList.length ? `
   <h2>Daftar Material</h2>
   <table>
-    <thead><tr><th>Deskripsi Material</th><th>Manufacture/Brand</th><th class="num">Qty Pesan</th><th class="num">Qty Diterima</th><th>DT</th><th>Tgl Onsite</th><th>Status</th><th>Catatan</th></tr></thead>
+    <thead><tr><th>Deskripsi Material</th><th>Manufacture/Brand</th><th class="num">Qty Pesan</th><th class="num">Qty Diterima</th><th>DT</th><th>ETA</th><th>Tgl Diterima Aktual</th><th>Status</th><th>Catatan</th></tr></thead>
     <tbody>${materialRowsHtml}</tbody>
   </table>
   ` : ""}
