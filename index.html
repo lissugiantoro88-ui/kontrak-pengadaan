@@ -2063,7 +2063,7 @@ const STAGE_DETAIL_FIELDS = {
     // KALENDER, bukan hari kerja -- konsisten dgn cara hitung selisih-hari
     // lain di aplikasi ini (SLA telat/cepat checklist tahap), yang juga
     // tidak punya kalender libur nasional.
-    { key:"dt", label:"DT", type:"text", placeholder:"mis. 45 hari kalender (otomatis begitu Tanggal PO & Tgl Diterima Aktual terisi, bisa diedit manual)", showIf:["Material","All in"] },
+    { key:"dt", label:"DT", type:"text", placeholder:"", showIf:["Material","All in"] },
     // ETA = rencana/estimasi kedatangan dari vendor (dipakai jg sbg acuan
     // rekap). Tgl Diterima Aktual = fakta barang benar2 sudah diterima —
     // SENGAJA dipisah, jangan digabung lagi jadi satu field seperti dulu
