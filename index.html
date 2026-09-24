@@ -582,6 +582,15 @@
     margin:0 0 10px 25px;padding:10px 12px;
     background:#FAFAF8;border-left:2px solid var(--accent-soft);
     border-radius:0 6px 6px 0;
+    transition:background-color .3s, border-left-color .3s;
+  }
+  /* Dipakai window.openEditModal utk nyorot panel tahap yang field-nya
+     "nyasar" harus dilengkapi di situ (mis. Vendor Pemenang), supaya
+     planner yang datang dari tag "Data PO Belum Lengkap" langsung lihat
+     ke mana harus mengisi tanpa perlu cari-cari sendiri. */
+  .stageDetailPanel.stageDetailHighlight{
+    background:var(--amber-soft);border-left-color:var(--amber);
+    box-shadow:0 0 0 2px var(--amber-soft);
   }
   .stageDetailField{margin-bottom:8px;}
   .stageDetailField:last-child{margin-bottom:0;}
@@ -3361,7 +3370,13 @@ function getPOMissingFields(item){
   const missing = [];
   if(!kontrakDetail.nomorPO || !String(kontrakDetail.nomorPO).trim()) missing.push("Nomor PO");
   if(isCurrencyValueEmpty(kontrakDetail.nilaiPO)) missing.push("Nilai PO");
-  if(!pemenangDetail.vendorPemenang || !String(pemenangDetail.vendorPemenang).trim()) missing.push("Vendor Pemenang");
+  // Vendor Pemenang SENGAJA field-nya ada di tahap "Penetapan Pemenang
+  // Pekerjaan", bukan di "Pembuatan Kontrak/Approval PO" -- planner yang
+  // sedang melengkapi checklist Kontrak/PO gampang tidak sadar field ini
+  // ada di panel tahap SEBELUMNYA. Makanya label-nya EKSPLISIT bilang
+  // harus diisi di mana (lihat juga window.openEditModal, yang otomatis
+  // scroll+highlight ke panel itu kalau field ini yang belum lengkap).
+  if(!pemenangDetail.vendorPemenang || !String(pemenangDetail.vendorPemenang).trim()) missing.push("Vendor Pemenang (isi di tahap Penetapan Pemenang Pekerjaan)");
   if(["Material","All in"].includes(jp) && !kontrakDetail.tanggalOnsite) missing.push("ETA");
   if(["Jasa","All in"].includes(jp) && !kontrakDetail.dayOne) missing.push("Day One");
   return missing;
@@ -6451,6 +6466,25 @@ window.openEditModal = function(id){
     markThreadReadByCurrentUser(item); // fire-and-forget, tidak perlu ditunggu
   }
   document.getElementById("itemModal").classList.add("show");
+
+  // Vendor Pemenang letaknya di tahap "Penetapan Pemenang Pekerjaan", bukan
+  // "Pembuatan Kontrak/Approval PO" -- kalau ini satu-satunya (atau salah
+  // satu) yang bikin item ini kena tag "Data PO Belum Lengkap", auto-scroll
+  // + sorot panelnya supaya planner tidak perlu cari-cari sendiri. Panel
+  // dipaksa tampil (style.display) TANPA mencentang checkbox-nya -- isi
+  // field tetap tersimpan walau stage itu belum resmi ditandai selesai
+  // (lihat getStageDetailsFromForm, yang baca semua field apa adanya dari
+  // DOM tanpa peduli status checkbox).
+  if(getPOMissingFields(item).some(m => m.startsWith("Vendor Pemenang"))){
+    setTimeout(() => {
+      const panel = document.getElementById("stageDetail_penetapanPemenang");
+      if(!panel) return;
+      panel.style.display = "block";
+      panel.scrollIntoView({ behavior:"smooth", block:"center" });
+      panel.classList.add("stageDetailHighlight");
+      setTimeout(() => panel.classList.remove("stageDetailHighlight"), 2500);
+    }, 200);
+  }
 };
 
 // Manager: hanya field targetSelesai yang bisa diedit. Field lain read-only.
