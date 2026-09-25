@@ -591,6 +591,19 @@
     font-size:11px;padding:2px 8px;cursor:pointer;color:var(--ink-soft);margin-top:4px;
   }
   .instructionDoneBtn:hover{background:var(--green-soft);color:var(--green);border-color:var(--green);}
+  /* Reaksi cepat (👍 dll) di tiap catatan/instruksi -- supaya bisa merespons
+     tanpa harus ngetik balasan. Tombol SELALU tampil (tidak disembunyikan di
+     balik menu "+") supaya satu klik langsung jadi, konsisten dgn pola
+     reaksi cepat yang orang sudah biasa (WhatsApp/Slack). */
+  .iiReactions{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;}
+  .iiReactBtn{
+    display:inline-flex;align-items:center;gap:3px;
+    background:#fff;border:1px solid var(--line);border-radius:12px;
+    font-size:12px;padding:2px 8px;cursor:pointer;color:var(--ink-soft);
+    font-family:'IBM Plex Mono',monospace;transition:background .12s,border-color .12s;
+  }
+  .iiReactBtn:hover{background:#FAFBFC;border-color:var(--ink-soft);}
+  .iiReactBtn.active{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:600;}
   .instructionInputRow{display:flex;gap:8px;margin-top:10px;}
   .instructionInputRow input{
     flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:6px;
@@ -2711,9 +2724,17 @@ document.addEventListener("click", (e) => {
   }
 });
 
+// Reaksi cepat yang common dipakai -- sengaja dibatasi 4 dan TIDAK termasuk
+// ✅ (itu sudah punya makna sendiri lewat tombol "✓ Selesai" utk instruksi,
+// dobel makna kalau dipakai lagi di sini jadi rawan salah paham):
+// 👍 setuju/oke, 🙏 siap/diterima, 👀 sudah dilihat/dicatat, ❓ perlu diperjelas.
+const QUICK_REACTIONS = ["👍", "🙏", "👀", "❓"];
+
 function renderInstructionThread(item){
   const canInstruct = ["admin", "manager", "senior_planner"].includes(currentRole);
   const isOwner = currentUser && item.pic === currentPicName;
+  const canWrite = canInstruct || isOwner; // siapa yang boleh balas -> siapa juga yang boleh kasih reaksi
+  const myUid = currentUser ? currentUser.uid : null;
   const entries = item.instructions ? Object.entries(item.instructions).sort((a,b) => tsMillis(a[1].createdAt) - tsMillis(b[1].createdAt)) : [];
 
   document.getElementById("instructionThread").innerHTML = entries.length === 0
@@ -2725,6 +2746,15 @@ function renderInstructionThread(item){
         const doneBtn = (e.type === "instruksi" && e.status !== "done" && isOwner)
           ? `<button class="instructionDoneBtn" onclick='window.markInstructionDone(${JSON.stringify(id)})'>✓ Selesai</button>`
           : "";
+        const reactions = e.reactions || {};
+        const reactBtnsHtml = canWrite ? QUICK_REACTIONS.map(emoji => {
+          const who = reactions[emoji] || {};
+          const names = Object.values(who);
+          const mine = !!(myUid && who[myUid]);
+          const countHtml = names.length > 0 ? ` ${names.length}` : "";
+          const titleAttr = names.length > 0 ? ` title="${escapeHtml(names.join(", "))}"` : "";
+          return `<button type="button" class="iiReactBtn${mine ? " active" : ""}"${titleAttr} onclick='window.toggleInstructionReaction(${JSON.stringify(id)}, ${JSON.stringify(emoji)})'>${emoji}${countHtml}</button>`;
+        }).join("") : "";
         return `
           <div class="instructionItem">
             <span class="iiIcon">${icon}</span>
@@ -2732,12 +2762,12 @@ function renderInstructionThread(item){
               <div class="iiMeta"><b>${escapeHtml(e.author || "—")}</b> · ${waktu}${doneBadge}</div>
               <div class="iiText">${escapeHtml(e.text)}</div>
               ${doneBtn}
+              ${reactBtnsHtml ? `<div class="iiReactions">${reactBtnsHtml}</div>` : ""}
             </div>
           </div>
         `;
       }).join("");
 
-  const canWrite = canInstruct || isOwner;
   document.getElementById("fInstructionText").style.display = canWrite ? "block" : "none";
   document.getElementById("btnSendInstruction").style.display = canWrite ? "inline-flex" : "none";
   document.getElementById("btnSendInstruction").textContent = canInstruct ? "Kirim" : "Balas";
@@ -2790,6 +2820,38 @@ window.markInstructionDone = async function(entryId){
     renderInstructionThread({ ...item, instructions: newInstructions });
   }catch(e){
     alert("Gagal menandai selesai.");
+    console.error(e);
+  }
+};
+
+// Toggle reaksi cepat (klik lagi emoji yang sama -> batal). reactions
+// disimpan per-entry sbg { emoji: { uid: nama } } -- simpan nama sekalian
+// (bukan cuma uid) supaya bisa ditampilkan di tooltip tanpa perlu lookup
+// user lain lagi.
+window.toggleInstructionReaction = async function(entryId, emoji){
+  const id = document.getElementById("itemId").value;
+  const item = allItems.find(i => i.id === id);
+  if(!item || !item.instructions || !item.instructions[entryId] || !currentUser) return;
+  const uid = currentUser.uid;
+  const entry = item.instructions[entryId];
+  const reactions = { ...(entry.reactions || {}) };
+  const forEmoji = { ...(reactions[emoji] || {}) };
+  if(forEmoji[uid]){
+    delete forEmoji[uid];
+  } else {
+    forEmoji[uid] = currentName;
+  }
+  if(Object.keys(forEmoji).length === 0){
+    delete reactions[emoji];
+  } else {
+    reactions[emoji] = forEmoji;
+  }
+  const newInstructions = { ...item.instructions, [entryId]: { ...entry, reactions } };
+  try{
+    await updateDoc(doc(db, "procurement_items", id), { instructions: newInstructions, updatedAt: serverTimestamp() });
+    renderInstructionThread({ ...item, instructions: newInstructions });
+  }catch(e){
+    alert("Gagal menyimpan reaksi.");
     console.error(e);
   }
 };
