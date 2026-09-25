@@ -2956,6 +2956,22 @@ window.autoFillKontrakDT = function(){
 const GATE_KEY = "berkasProcurement";
 const GATED_KEYS = ["preBid", "evaluasiNegosiasi", "lhp", "penetapanPemenang", "kontrakPO"];
 
+// "kontrakPO" SECARA TEKNIS bisa saja true di data tersimpan walau
+// prasyaratnya (GATE_KEY, "Pengiriman Berkas ke Procurement") sudah/belum
+// pernah tercentang -- mis. data lama sebelum gating ini ada, atau item yang
+// sempat lolos gate lalu gate-nya dicabut belakangan tapi item itu tidak
+// pernah dibuka+disimpan ulang sejak itu (applyStageGating cuma
+// membetulkan tampilan checkbox begitu form dibuka, tidak membetulkan data
+// yang sudah tersimpan). Kalau ini terjadi, planner akan lihat checklist
+// "Kontrak/PO" TIDAK tercentang di form (form-nya benar), tapi sinyal lain
+// yang baca item.stages.kontrakPO MENTAH langsung dari data tersimpan --
+// tanpa lewat sini -- akan salah menganggap PO sudah terbit. Makanya semua
+// tempat yang perlu tahu "apakah PO benar2 sudah terbit" WAJIB panggil
+// fungsi ini, jangan baca item.stages.kontrakPO langsung.
+function isKontrakPOGenuinelyIssued(item){
+  return !!(item.stages && item.stages[GATE_KEY] && item.stages.kontrakPO);
+}
+
 function applyStageGating(){
   const gateEl = document.getElementById(`stage_${GATE_KEY}`);
   const gateOn = !!(gateEl && gateEl.checked);
@@ -3474,7 +3490,7 @@ function isCurrencyValueEmpty(raw){
 }
 
 function getPOMissingFields(item){
-  if(!item.stages || !item.stages.kontrakPO) return []; // checklist belum dicentang -> belum relevan
+  if(!isKontrakPOGenuinelyIssued(item)) return []; // checklist belum dicentang (atau tidak konsisten dgn prasyaratnya) -> belum relevan
   if(item.contractType === "Empowerment") return [];
 
   const kontrakDetail = (item.stageDetails && item.stageDetails.kontrakPO) || {};
@@ -3995,7 +4011,7 @@ function buildTrackingGroups(){
     if(!groups.has(key)){
       groups.set(key, { key, tag: tag || (item.namaPekerjaan || "(Tanpa Nama)"), tagged: !!tag, pekerjaanList: [] });
     }
-    const poTerbit = !!(item.stages && item.stages.kontrakPO);
+    const poTerbit = isKontrakPOGenuinelyIssued(item);
     // Pakai computeMaterialStatusKey() yang sama dengan Daftar Material di
     // modal — satu sumber logika status, supaya status yang tampil di sini
     // dan di modal selalu konsisten (termasuk logika Menunggu/Terlambat).
