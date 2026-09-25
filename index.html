@@ -3626,14 +3626,31 @@ function getPOMissingFields(item){
   // harus diisi di mana (lihat juga window.openEditModal, yang otomatis
   // scroll+highlight ke panel itu kalau field ini yang belum lengkap).
   if(!pemenangDetail.vendorPemenang || !String(pemenangDetail.vendorPemenang).trim()) missing.push("Vendor Pemenang (isi di tahap Penetapan Pemenang Pekerjaan)");
-  if(["Material","All in"].includes(jp) && !kontrakDetail.tanggalOnsite) missing.push("ETA");
-  if(["Jasa","All in"].includes(jp) && !kontrakDetail.dayOne) missing.push("Day One");
+  // Jenis Pengadaan kosong (banyak terjadi di data lama/migrasi Excel yang
+  // dibuat sebelum field ini ada) SEBELUMNYA membuat pengecekan ETA/Day One
+  // di-skip diam2 (dianggap "tidak relevan"), padahal seharusnya dianggap
+  // "tidak diketahui -> data belum lengkap". Flag eksplisit dulu di sini
+  // supaya planner mengisi Jenis Pengadaan-nya -- begitu terisi, baru
+  // pengecekan ETA/Day One di bawah jalan seperti biasa.
+  if(!jp){
+    missing.push("Jenis Pengadaan (belum dipilih)");
+  } else {
+    if(["Material","All in"].includes(jp) && !kontrakDetail.tanggalOnsite) missing.push("ETA");
+    if(["Jasa","All in"].includes(jp) && !kontrakDetail.dayOne) missing.push("Day One");
+  }
   return missing;
 }
 
 function isPOKontrakIncomplete(item){
   return getPOMissingFields(item).length > 0;
 }
+
+// Expose ke window murni utk keperluan debugging manual lewat browser
+// console (lihat window.allItems) -- fungsi2 ini pure (tidak mengubah state),
+// jadi aman dipanggil kapan saja dari luar tanpa efek samping.
+window.getTotalProgress = getTotalProgress;
+window.getPOMissingFields = getPOMissingFields;
+window.isKontrakPOGenuinelyIssued = isKontrakPOGenuinelyIssued;
 
 function daysUntil(dateStr){
   const today = new Date(); today.setHours(0,0,0,0);
