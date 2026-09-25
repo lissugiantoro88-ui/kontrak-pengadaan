@@ -3968,14 +3968,10 @@ function getPORefRows(){
         tanggalOnsite: kontrakDetail.tanggalOnsite || "", // ETA — rencana/estimasi
         tanggalDiterimaAktual: kontrakDetail.tanggalDiterimaAktual || "", // fakta barang aktual diterima
         dayOne: kontrakDetail.dayOne || "",
-        durasiPekerjaan: kontrakDetail.durasiPekerjaan || "",
-        // Progress 100% TIDAK berarti data PO-nya sendiri lengkap -- checklist
-        // Kontrak/PO cuma satu dari banyak tahap yang dihitung ke progress.
-        // Tanpa ini, satu-satunya tempat sinyal "Data PO Belum Lengkap" pernah
-        // muncul adalah daftar Pekerjaan & Kinerja Saya -- padahal justru
-        // tabel INI (Summary PO, isinya semua yang sudah 100%) tempat paling
-        // wajar orang mengaudit kelengkapan data PO yang sudah "selesai".
-        missing: getPOMissingFields(i)
+        durasiPekerjaan: kontrakDetail.durasiPekerjaan || ""
+        // Sengaja TIDAK menampilkan sinyal "Data PO Belum Lengkap" di sini --
+        // sudah terwakili di Daftar Pekerjaan & Kinerja Saya (per planner),
+        // menampilkannya lagi di Summary PO dianggap redundan/kurang relevan.
       };
     });
 }
@@ -4051,11 +4047,11 @@ window.renderPORefTable = function(){
   document.getElementById("poRefBtnNext").disabled = poRefCurrentPage >= totalPages;
 
   tbody.innerHTML = pageRows.map((r, idx) => `
-    <tr style="cursor:pointer;${r.missing.length > 0 ? "background:var(--amber-soft);" : ""}" onclick='window.switchView("list");window.openEditModal(${JSON.stringify(r.id)})' title="${r.missing.length > 0 ? `Data PO belum lengkap: ${escapeHtml(r.missing.join(", "))}` : ""}">
+    <tr style="cursor:pointer;" onclick='window.switchView("list");window.openEditModal(${JSON.stringify(r.id)})'>
       <td class="mono" style="text-align:center;color:var(--ink-soft);">${startIdx + idx + 1}</td>
       <td class="mono">${fmtDate(r.tanggalPO)}</td>
       <td class="mono">${escapeHtml(r.nomorPO || "—")}</td>
-      <td>${r.missing.length > 0 ? `<span style="color:var(--amber);margin-right:4px;">⚠</span>` : ""}${escapeHtml(r.nama)}</td>
+      <td>${escapeHtml(r.nama)}</td>
       <td>${r.kategori ? `<span class="pill ${KATEGORI_PILL_CLASS[r.kategori] || "pill-lainnya"}">${escapeHtml(r.kategori)}</span>` : "—"}</td>
       <td>${escapeHtml(r.disiplin || "—")}</td>
       <td>${escapeHtml(r.contractType || "—")}</td>
@@ -4169,8 +4165,10 @@ function buildTrackingGroups(){
       item, materials: materialsWithStatus,
       nomorPO: kontrakDetail.nomorPO || "",
       bucket: urgency.bucket,
-      earliestOnsite: urgency.earliestOnsite,
-      poMissing: getPOMissingFields(item)
+      earliestOnsite: urgency.earliestOnsite
+      // Sengaja TIDAK bawa sinyal "Data PO Belum Lengkap" ke sini -- sudah
+      // terwakili di Daftar Pekerjaan & Kinerja Saya, di Tracking Material
+      // dianggap tidak relevan (lensa di sini status kedatangan material).
     });
   });
 
@@ -4285,7 +4283,7 @@ function buildTrackingRowsHtml(entries, opts){
         </tr>
       `;
       let jobNo = 0;
-      g.pekerjaanList.forEach(({ item, materials, nomorPO, poMissing }) => {
+      g.pekerjaanList.forEach(({ item, materials, nomorPO }) => {
         // Sub-header per pekerjaan juga bisa di-collapse sendiri, terpisah
         // dari collapse di level Equipment Tag — supaya tiap PO di dalam
         // satu tag bisa dilihat/ditutup satu per satu. Diberi nomor urut
@@ -4300,10 +4298,7 @@ function buildTrackingRowsHtml(entries, opts){
         // Badge "baru diupdate" MURNI informasi — tidak ikut menentukan posisi
         // baris ini (posisinya tetap dari urgensi bucket/tgl onsite di atas).
         const updateBadge = interactive ? relativeUpdateBadge(item) : "";
-        const poMissingBadge = poMissing.length > 0
-          ? `<span class="metaBit" style="color:#C77D2E;font-weight:700;" title="Data PO belum lengkap: ${escapeHtml(poMissing.join(", "))}">⚠ Data PO Belum Lengkap</span>`
-          : "";
-        html += `<tr class="trackJobSubRow"${rowDataAttr}${groupRowStyle}${jobOnclick}><td colspan="${TRACK_COLSPAN}">${jobChevron}<span class="trackJobNo">PO #${jobNo}/${g.pekerjaanList.length}</span>${jobCell}<span class="metaBit">No. PO: <b>${nomorPO ? escapeHtml(nomorPO) : "—"}</b></span>${poMissingBadge}${updateBadge}</td></tr>`;
+        html += `<tr class="trackJobSubRow"${rowDataAttr}${groupRowStyle}${jobOnclick}><td colspan="${TRACK_COLSPAN}">${jobChevron}<span class="trackJobNo">PO #${jobNo}/${g.pekerjaanList.length}</span>${jobCell}<span class="metaBit">No. PO: <b>${nomorPO ? escapeHtml(nomorPO) : "—"}</b></span>${updateBadge}</td></tr>`;
         const dataRowStyle = (groupCollapsed || jobCollapsed) ? ' style="display:none;"' : "";
         const rowspan = materials.length;
         materials.forEach((m, idx) => {
@@ -4315,17 +4310,14 @@ function buildTrackingRowsHtml(entries, opts){
     } else {
       // Grup tanpa tag = tepat 1 pekerjaan. Header + sub-header digabung
       // jadi satu baris supaya nama pekerjaan tidak tertulis dua kali.
-      const { item, materials, nomorPO, poMissing } = g.pekerjaanList[0];
+      const { item, materials, nomorPO } = g.pekerjaanList[0];
       const jobCell = interactive
         ? `<span class="trackPekerjaanLink" onclick='event.stopPropagation();window.switchView("list");window.openEditModal(${JSON.stringify(item.id)})'>${escapeHtml(item.namaPekerjaan || "—")}</span>`
         : `<b>${escapeHtml(item.namaPekerjaan || "—")}</b>`;
       const updateBadge = interactive ? relativeUpdateBadge(item) : "";
-      const poMissingBadge = poMissing.length > 0
-        ? `<span class="trackGroupCount" style="color:#F2C879;font-weight:700;" title="Data PO belum lengkap: ${escapeHtml(poMissing.join(", "))}">⚠ Data PO Belum Lengkap</span>`
-        : "";
       html += `
         <tr class="trackGroupHeaderRow"${headerOnclick}>
-          <td colspan="${TRACK_COLSPAN}">${chevron}${jobCell}<span class="trackGroupCount" style="color:#C9D1DB;">(Tanpa Equipment Tag) — No. PO: ${nomorPO ? escapeHtml(nomorPO) : "—"}</span>${poMissingBadge}${updateBadge}</td>
+          <td colspan="${TRACK_COLSPAN}">${chevron}${jobCell}<span class="trackGroupCount" style="color:#C9D1DB;">(Tanpa Equipment Tag) — No. PO: ${nomorPO ? escapeHtml(nomorPO) : "—"}</span>${updateBadge}</td>
         </tr>
       `;
       const rowspan = materials.length;
@@ -4583,11 +4575,11 @@ window.exportTrackingMaterialExcel = function(){
     ["TRACKING MATERIAL — MONITORING PERENCANAAN PENGADAAN KONTRAK"],
     [`Dibuat oleh: ${currentName} (${currentRole})  |  Tanggal: ${new Date().toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' })}${kw ? `  |  Pencarian: "${kw}"` : ""}`],
     [],
-    ["Equipment Tag", "No. PO", "Pekerjaan", "PIC", "Deskripsi Material", "Brand", "Qty Pesan", "Qty Diterima", "DT", "ETA", "Tgl Diterima Aktual", "Status", "Catatan", "Kelengkapan Data PO"]
+    ["Equipment Tag", "No. PO", "Pekerjaan", "PIC", "Deskripsi Material", "Brand", "Qty Pesan", "Qty Diterima", "DT", "ETA", "Tgl Diterima Aktual", "Status", "Catatan"]
   ];
 
   entries.forEach(g => {
-    g.pekerjaanList.forEach(({ item, materials, nomorPO, poMissing }) => {
+    g.pekerjaanList.forEach(({ item, materials, nomorPO }) => {
       materials.forEach(m => {
         const def = MATERIAL_STATUS_DEF[m.statusKey];
         aoa.push([
@@ -4603,8 +4595,7 @@ window.exportTrackingMaterialExcel = function(){
           m.tanggalOnsite ? fmtDate(m.tanggalOnsite) : "",
           m.tanggalDiterimaAktual ? fmtDate(m.tanggalDiterimaAktual) : "",
           def ? def.label : "",
-          m.catatan || "",
-          poMissing.length > 0 ? `Belum Lengkap: ${poMissing.join(", ")}` : "Lengkap"
+          m.catatan || ""
         ]);
       });
     });
@@ -4612,11 +4603,11 @@ window.exportTrackingMaterialExcel = function(){
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws["!cols"] = [
-    {wch:22},{wch:16},{wch:34},{wch:16},{wch:34},{wch:16},{wch:10},{wch:12},{wch:14},{wch:12},{wch:16},{wch:12},{wch:30},{wch:34}
+    {wch:22},{wch:16},{wch:34},{wch:16},{wch:34},{wch:16},{wch:10},{wch:12},{wch:14},{wch:12},{wch:16},{wch:12},{wch:30}
   ];
   ws["!merges"] = [
-    { s: {r:0,c:0}, e: {r:0,c:13} },
-    { s: {r:1,c:0}, e: {r:1,c:13} }
+    { s: {r:0,c:0}, e: {r:0,c:12} },
+    { s: {r:1,c:0}, e: {r:1,c:12} }
   ];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Tracking Material");
@@ -4631,11 +4622,11 @@ window.exportPORefPdf = function(){
   if(rows.length === 0){ alert("Belum ada data PO untuk diekspor."); return; }
 
   const rowsHtml = rows.map((r, idx) => `
-    <tr${r.missing.length > 0 ? ` style="background:#FBF0E3;" title="Data PO belum lengkap: ${escapeHtml(r.missing.join(", "))}"` : ""}>
+    <tr>
       <td style="text-align:center;">${idx + 1}</td>
       <td>${fmtDate(r.tanggalPO)}</td>
       <td>${escapeHtml(r.nomorPO || "—")}</td>
-      <td>${r.missing.length > 0 ? "⚠ " : ""}${escapeHtml(r.nama)}</td>
+      <td>${escapeHtml(r.nama)}</td>
       <td>${escapeHtml(r.kategori || "—")}</td>
       <td>${escapeHtml(r.disiplin || "—")}</td>
       <td>${escapeHtml(r.contractType || "—")}</td>
@@ -4734,7 +4725,7 @@ window.exportPORefExcel = function(){
     ["SUMMARY PO — RIWAYAT PENGADAAN KONTRAK — MONITORING PERENCANAAN PENGADAAN KONTRAK"],
     [`Dibuat oleh: ${currentName} (${currentRole})  |  Tanggal: ${new Date().toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' })}  |  Total ${rows.length} PO`],
     [],
-    ["No","Tanggal PO","No. PO","Nama Pekerjaan","Kategori","Disiplin","Jenis Kontrak","Jenis Pengadaan","Vendor","DT","ETA","Tgl Diterima Aktual","Day One","Durasi","Nilai PO","Mata Uang","Planner","Kelengkapan Data"]
+    ["No","Tanggal PO","No. PO","Nama Pekerjaan","Kategori","Disiplin","Jenis Kontrak","Jenis Pengadaan","Vendor","DT","ETA","Tgl Diterima Aktual","Day One","Durasi","Nilai PO","Mata Uang","Planner"]
   ];
   rows.forEach((r, idx) => {
     aoa.push([
@@ -4754,21 +4745,17 @@ window.exportPORefExcel = function(){
       r.durasiPekerjaan || "",
       r.nilaiAmount || "", // angka murni (bukan teks berformat) supaya bisa dijumlah/pivot di Excel
       r.nilaiCurrency || "",
-      r.planner || "",
-      // Progress 100% tidak berarti datanya lengkap -- kolom ini eksplisit
-      // supaya bisa di-filter/sort di Excel, bukan cuma warna (yang gampang
-      // hilang saat di-print/di-forward).
-      r.missing.length > 0 ? `Belum Lengkap: ${r.missing.join(", ")}` : "Lengkap"
+      r.planner || ""
     ]);
   });
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws["!cols"] = [
-    {wch:5},{wch:13},{wch:16},{wch:34},{wch:13},{wch:13},{wch:13},{wch:13},{wch:20},{wch:14},{wch:12},{wch:16},{wch:12},{wch:10},{wch:16},{wch:9},{wch:16},{wch:40}
+    {wch:5},{wch:13},{wch:16},{wch:34},{wch:13},{wch:13},{wch:13},{wch:13},{wch:20},{wch:14},{wch:12},{wch:16},{wch:12},{wch:10},{wch:16},{wch:9},{wch:16}
   ];
   ws["!merges"] = [
-    { s: {r:0,c:0}, e: {r:0,c:17} },
-    { s: {r:1,c:0}, e: {r:1,c:17} }
+    { s: {r:0,c:0}, e: {r:0,c:16} },
+    { s: {r:1,c:0}, e: {r:1,c:16} }
   ];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Summary PO");
