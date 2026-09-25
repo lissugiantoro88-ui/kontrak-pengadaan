@@ -327,11 +327,48 @@
     padding:3px 8px;
     border-radius:4px;
   }
-  #unreadMsgBadge{
+  /* Sebelumnya cuma titik/lingkaran polos di sebelah role, tanpa keterangan
+     dan tidak bisa diklik -- planner tidak ngeh itu apa, jadi instruksi dari
+     atasan sering kelewat tidak dibalas. Sekarang dibungkus tombol (ikon
+     amplop + angka), diklik untuk buka daftar pekerjaan mana saja yang ada
+     pesan belum dibaca, langsung bisa loncat ke situ. */
+  .unreadMsgWrap{position:relative;}
+  .unreadMsgBtn{
     display:inline-flex;align-items:center;justify-content:center;
-    min-width:19px;height:19px;padding:0 5px;
-    background:#E05D5D;color:#fff;border-radius:10px;
-    font-size:11px;font-weight:700;font-family:'IBM Plex Mono',monospace;
+    position:relative;width:32px;height:32px;flex-shrink:0;
+    background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.25);
+    border-radius:7px;color:#fff;cursor:pointer;transition:background .12s;
+  }
+  .unreadMsgBtn:hover{background:rgba(255,255,255,0.2);}
+  .unreadMsgBtn svg{width:17px;height:17px;}
+  #unreadMsgBadge{
+    position:absolute;top:-6px;right:-6px;
+    display:inline-flex;align-items:center;justify-content:center;
+    min-width:18px;height:18px;padding:0 4px;
+    background:#E05D5D;color:#fff;border-radius:10px;border:2px solid var(--ink);
+    font-size:10.5px;font-weight:700;font-family:'IBM Plex Mono',monospace;
+  }
+  .unreadMsgPanel{
+    position:absolute;top:calc(100% + 8px);right:0;z-index:250;
+    background:#fff;border:1px solid var(--line);border-radius:10px;
+    box-shadow:0 8px 28px rgba(28,37,48,0.22);
+    width:300px;max-height:360px;overflow-y:auto;display:none;
+  }
+  .unreadMsgPanelHeader{
+    padding:11px 14px;background:var(--ink);color:#fff;position:sticky;top:0;
+    font-family:'IBM Plex Mono',monospace;font-size:11px;text-transform:uppercase;letter-spacing:.05em;
+  }
+  .unreadMsgRow{
+    display:flex;justify-content:space-between;align-items:center;gap:10px;
+    padding:11px 14px;border-bottom:1px solid #F0F0EE;cursor:pointer;transition:background .12s;
+  }
+  .unreadMsgRow:last-child{border-bottom:none;}
+  .unreadMsgRow:hover{background:#FAFBFC;}
+  .unreadMsgRowName{font-size:13px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .unreadMsgRowCount{
+    flex-shrink:0;min-width:20px;height:20px;padding:0 6px;display:inline-flex;
+    align-items:center;justify-content:center;background:var(--red-soft);color:var(--red);
+    border-radius:10px;font-size:11px;font-weight:700;font-family:'IBM Plex Mono',monospace;
   }
   .sidebarToggleBtn{
     display:none;background:none;border:none;color:#fff;cursor:pointer;
@@ -794,8 +831,20 @@
 
   /* ===== DASHBOARD ===== */
   .dashSection{margin-bottom:28px;}
-  .dashSection h3{font-size:14px;margin-bottom:12px;color:var(--ink);}
+  .dashSection h3{
+    font-size:17px;font-weight:700;color:var(--ink);
+    margin:0 0 14px;padding-bottom:9px;
+    border-bottom:2px solid var(--ink);
+  }
   .dashSection .dashSub{font-size:12px;color:var(--ink-soft);margin-top:-8px;margin-bottom:14px;}
+  /* Sub-bagian di dalam satu dashSection (mis. tiap daftar di "Kinerja
+     Saya") -- jarak & garis pemisah yang jelas antar "bab", supaya tidak
+     menyatu jadi satu blok teks panjang. formSectionTitle (sudah dipakai
+     di form Tambah/Edit Pekerjaan) dipakai ulang di sini juga supaya
+     bahasa visualnya konsisten satu aplikasi, bukan gaya baru sendiri. */
+  .perfSubSection{margin-top:22px;padding-top:18px;border-top:1px solid var(--line);}
+  .perfSubSection:first-of-type{margin-top:16px;padding-top:0;border-top:none;}
+  .perfSubSection.perfSubSectionLast{margin-bottom:2px;}
 
   .barChartRow{
     display:flex;align-items:center;gap:12px;padding:9px 6px;
@@ -1029,7 +1078,13 @@
     <div class="who">
       <span id="whoName">—</span>
       <span class="role-badge" id="whoRole">—</span>
-      <span id="unreadMsgBadge" style="display:none;" title="Pesan belum dibaca"></span>
+      <div class="unreadMsgWrap">
+        <button type="button" class="unreadMsgBtn" id="unreadMsgBtn" onclick="window.toggleUnreadMsgPanel(event)" title="Pesan instruksi/balasan belum dibaca — klik untuk lihat" aria-label="Pesan belum dibaca">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span id="unreadMsgBadge" style="display:none;"></span>
+        </button>
+        <div class="unreadMsgPanel" id="unreadMsgPanel"></div>
+      </div>
       <button class="btn btn-ghost" style="color:#fff;border-color:rgba(255,255,255,0.25)" onclick="window.openChangePasswordModal()">Ganti Password</button>
       <button class="btn btn-ghost" style="color:#fff;border-color:rgba(255,255,255,0.25)" onclick="window.doLogout()">Keluar</button>
     </div>
@@ -2558,22 +2613,29 @@ async function markThreadReadByCurrentUser(item){
   }
 }
 
-// Hitung notifikasi personal:
+// Hitung notifikasi personal, DIPECAH per-pekerjaan (bukan cuma total) --
+// dipakai baik utk angka di badge maupun utk isi daftar dropdown-nya, jadi
+// satu sumber kebenaran, tidak dihitung dua kali dengan logika yg bisa beda:
 // - Planner: jumlah INSTRUKSI (dari atasan) yang belum pernah dia buka,
 //   di semua pekerjaan miliknya sendiri.
 // - Admin/Manager/Senior Planner: jumlah BALASAN planner yang belum pernah
 //   dia buka, HANYA di pekerjaan yang pernah dia kirimi instruksi (sesuai
 //   kesepakatan: semua pengirim instruksi di pekerjaan itu ikut dinotifikasi).
-function countUnreadForCurrentUser(){
-  if(!currentUser) return 0;
+function getUnreadBreakdownForCurrentUser(){
+  if(!currentUser) return [];
   const uid = currentUser.uid;
-  let count = 0;
+  const rows = [];
   if(currentRole === "planner"){
     allItems.forEach(item => {
       if(item.pic !== currentPicName || !item.instructions) return;
+      let count = 0, lastMs = 0;
       Object.values(item.instructions).forEach(e => {
-        if(e.type === "instruksi" && !(e.readBy && e.readBy[uid])) count++;
+        if(e.type === "instruksi" && !(e.readBy && e.readBy[uid])){
+          count++;
+          lastMs = Math.max(lastMs, tsMillis(e.createdAt) || 0);
+        }
       });
+      if(count > 0) rows.push({ item, count, lastMs });
     });
   } else if(["admin", "manager", "senior_planner"].includes(currentRole)){
     allItems.forEach(item => {
@@ -2581,12 +2643,22 @@ function countUnreadForCurrentUser(){
       const entries = Object.values(item.instructions);
       const pernahKirimInstruksi = entries.some(e => e.type === "instruksi" && e.authorUid === uid);
       if(!pernahKirimInstruksi) return;
+      let count = 0, lastMs = 0;
       entries.forEach(e => {
-        if(e.type === "balasan" && !(e.readBy && e.readBy[uid])) count++;
+        if(e.type === "balasan" && !(e.readBy && e.readBy[uid])){
+          count++;
+          lastMs = Math.max(lastMs, tsMillis(e.createdAt) || 0);
+        }
       });
+      if(count > 0) rows.push({ item, count, lastMs });
     });
   }
-  return count;
+  rows.sort((a, b) => b.lastMs - a.lastMs); // paling baru duluan
+  return rows;
+}
+
+function countUnreadForCurrentUser(){
+  return getUnreadBreakdownForCurrentUser().reduce((sum, r) => sum + r.count, 0);
 }
 
 window.updateUnreadBadge = function(){
@@ -2595,7 +2667,49 @@ window.updateUnreadBadge = function(){
   const count = countUnreadForCurrentUser();
   badge.style.display = count > 0 ? "inline-flex" : "none";
   badge.textContent = count;
+  // Kalau dropdown-nya sedang terbuka pas count berubah (mis. datang
+  // instruksi baru real-time), refresh juga isinya biar tidak basi.
+  const panel = document.getElementById("unreadMsgPanel");
+  if(panel && panel.style.display === "block") renderUnreadMsgPanel();
 };
+
+function renderUnreadMsgPanel(){
+  const panel = document.getElementById("unreadMsgPanel");
+  if(!panel) return;
+  const rows = getUnreadBreakdownForCurrentUser();
+  const heading = currentRole === "planner" ? "Instruksi Belum Dibaca" : "Balasan Belum Dibaca";
+  panel.innerHTML = `<div class="unreadMsgPanelHeader">${heading}</div>` + (
+    rows.length === 0
+      ? `<div class="hint" style="padding:12px 14px;">Tidak ada pesan baru.</div>`
+      : rows.map(r => `
+          <div class="unreadMsgRow" onclick='window.closeUnreadMsgPanel();window.switchView("list");window.openEditModal(${JSON.stringify(r.item.id)})'>
+            <span class="unreadMsgRowName">${escapeHtml(r.item.namaPekerjaan)}</span>
+            <span class="unreadMsgRowCount">${r.count}</span>
+          </div>
+        `).join("")
+  );
+}
+
+window.closeUnreadMsgPanel = function(){
+  const panel = document.getElementById("unreadMsgPanel");
+  if(panel) panel.style.display = "none";
+};
+
+window.toggleUnreadMsgPanel = function(e){
+  if(e) e.stopPropagation();
+  const panel = document.getElementById("unreadMsgPanel");
+  if(!panel) return;
+  const willOpen = panel.style.display !== "block";
+  if(willOpen) renderUnreadMsgPanel();
+  panel.style.display = willOpen ? "block" : "none";
+};
+document.addEventListener("click", (e) => {
+  const panel = document.getElementById("unreadMsgPanel");
+  const btn = document.getElementById("unreadMsgBtn");
+  if(panel && btn && panel.style.display === "block" && !panel.contains(e.target) && e.target !== btn && !btn.contains(e.target)){
+    panel.style.display = "none";
+  }
+});
 
 function renderInstructionThread(item){
   const canInstruct = ["admin", "manager", "senior_planner"].includes(currentRole);
@@ -5817,24 +5931,24 @@ function renderMyPerformance(items){
           <div><div class="num mono" style="font-size:22px;color:${overdue.length>0?'var(--red)':'inherit'}">${overdue.length}</div><div class="lbl">Terlambat</div></div>
           <div><div class="num mono" style="font-size:22px;color:${poIncomplete.length>0?'var(--amber)':'inherit'}">${poIncomplete.length}</div><div class="lbl">⚠ Data PO Belum Lengkap</div></div>
         </div>
-        <div style="margin-top:14px;">
-          <div class="stageGroupTitle" style="margin-bottom:8px;">⭐ Pekerjaan Prioritas Saya</div>
+        <div class="perfSubSection">
+          <div class="formSectionTitle">⭐ Pekerjaan Prioritas Saya</div>
           ${priorityListHtml}
         </div>
-        <div style="margin-top:14px;">
-          <div class="stageGroupTitle" style="margin-bottom:8px;">Jatuh Tempo Minggu Ini</div>
+        <div class="perfSubSection">
+          <div class="formSectionTitle">Jatuh Tempo Minggu Ini</div>
           ${dueSoonListHtml}
         </div>
-        <div style="margin-top:14px;">
-          <div class="stageGroupTitle" style="margin-bottom:8px;">Pekerjaan Saya yang Terlambat</div>
+        <div class="perfSubSection">
+          <div class="formSectionTitle">Pekerjaan Saya yang Terlambat</div>
           ${overdueListHtml}
         </div>
-        <div style="margin-top:14px;">
-          <div class="stageGroupTitle" style="margin-bottom:8px;">Pekerjaan Saya Tanpa Progress (&ge;${STUCK_THRESHOLD_DAYS} hari)</div>
+        <div class="perfSubSection">
+          <div class="formSectionTitle">Pekerjaan Saya Tanpa Progress (&ge;${STUCK_THRESHOLD_DAYS} hari)</div>
           ${stuckListHtml}
         </div>
-        <div style="margin-top:14px;">
-          <div class="stageGroupTitle" style="margin-bottom:8px;">⚠ Data PO Belum Lengkap</div>
+        <div class="perfSubSection perfSubSectionLast">
+          <div class="formSectionTitle">⚠ Data PO Belum Lengkap</div>
           ${poIncompleteListHtml}
         </div>
       </div>
