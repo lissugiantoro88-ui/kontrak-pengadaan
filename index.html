@@ -2779,7 +2779,7 @@ function renderInstructionThread(item){
         }).join("");
         const addBtnHtml = canWrite ? `
           <span class="iiReactAddWrap">
-            <button type="button" class="iiReactAddBtn" title="Tambah reaksi" onclick='event.stopPropagation();window.toggleReactPicker(${JSON.stringify(id)})'>🙂+</button>
+            <button type="button" class="iiReactAddBtn" title="Tambah reaksi" onclick='event.stopPropagation();window.toggleReactPicker(${JSON.stringify(id)})'>+</button>
             <div class="iiReactPicker" id="reactPicker_${id}" style="display:none;">
               ${QUICK_REACTIONS.map(emoji => `<button type="button" class="iiReactPickBtn" onclick='window.toggleInstructionReaction(${JSON.stringify(id)}, ${JSON.stringify(emoji)});window.closeReactPicker(${JSON.stringify(id)})'>${emoji}</button>`).join("")}
             </div>
@@ -3478,6 +3478,11 @@ function listenItems(){
     // Terbaru di-update naik ke atas; yang tidak pernah di-update (tanpa
     // field updatedAt) dianggap timestamp 0 → otomatis tenggelam ke bawah.
     allItems.sort((a, b) => tsMillis(b.updatedAt) - tsMillis(a.updatedAt));
+    // allItems adalah variabel di dalam <script type="module"> -- TIDAK
+    // otomatis bisa diakses dari browser console (beda scope dari window).
+    // Expose ke window.allItems supaya bisa dicek manual lewat console utk
+    // debugging data mentah tanpa perlu server-side script terpisah.
+    window.allItems = allItems;
     populatePlannerFilter();
     populateEquipmentTagOptions();
     if(document.getElementById("viewTrackingMaterial") && document.getElementById("viewTrackingMaterial").style.display !== "none"){
